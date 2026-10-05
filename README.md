@@ -1,0 +1,137 @@
+# relweave
+
+relweave turns English text of any length into a typed knowledge graph: entities (people, organisations, places,
+objects, events) with every mention located in the text, and typed relations between them with the sentence that
+states each one. The graph comes out as JSON Graph Format (v2), networkx or GraphML.
+
+It runs a fine-tuned 4B language model on one consumer GPU (8 GB is enough). The text is cut into chunks; per chunk a
+generator writes the entities and a first set of relations, a pair-classification head scores every entity pair, and
+the two are combined (the union rule below). Entities are then merged across chunks.
+
+## Install
+
+```
+pip install git+https://github.com/memlocator/relweave            # running the model
+pip install "relweave[train] @ git+https://github.com/memlocator/relweave"   # also training
+```
+
+A PyPI release will follow. relweave needs Python 3.12 and a CUDA GPU with about 6 GB free (the base model is 4-bit).
+On first use it downloads the model `chrullis/relweave-4b-base` and the base model
+`unsloth/qwen3-4b-unsloth-bnb-4bit` from the Hugging Face Hub.
+
+## Quick start
+
+```python
+from relweave import Extractor
+
+ex = Extractor()                      # chrullis/relweave-4b-base, business schema
+g = ex.run(open("report.txt").read())
+
+for e in g.entities:
+    print(e.id, e.type, e.name, [m.text for m in e.mentions])
+for r in g.relations:
+    print(r.source, r.type, r.target, r.modality, r.score)
+
+open("graph.json", "w").write(g.to_json())   # JSON Graph Format v2
+nx_graph = g.to_networkx()
+```
+
+Several documents: `ex.run_many(texts)` returns one graph per text, and `ex.iter_run(texts)` yields
+`(index, graph)` as each document finishes; each model is loaded once per call.
+
+Command line:
+
+```
+relweave run report.txt --out graph.json
+relweave run a.txt b.txt c.txt --out graphs/ --graphml
+```
+
+Useful options (`relweave run --help`): `--weights` (a Hub repository or a local directory with `generator/` and
+`head/`), `--schema`, `--cut` and `--margin` (the union rule), `--batch-size` (default `auto`), `--max-words` (chunk
+size). If a model cannot be loaded (for example not enough GPU memory) the command fails with an error and a non-zero
+exit code; a single chunk that fails becomes a warning in the graph and the document continues.
+
+## Output
+
+Every entity node carries its type, a name, and every located mention (text, character offsets, the chunk it was read
+from and the containing sentence). Every relation edge carries its type, modality (`asserted`, `negated`, `hedged`,
+`reported`), the pair head's score, whether the generator or the head proposed it, and its evidence sentences.
+Symmetric relation types are undirected edges. The document node links to each entity with `MENTIONED_IN` edges.
+
+## Schema
+
+The model is trained on a business schema of 6 entity types (Person, Org, Object, Place, Coordinate, Event) and 21
+relation types (EMPLOYED_BY, EXECUTIVE_OF, BOARD_MEMBER_OF, OWNS_STAKE_IN, SUBSIDIARY_OF, ACQUIRED,
+HEADQUARTERED_IN, ...). The full list with definitions is in `docs/methodology.md`.
+
+A schema is written as Python classes; the docstring is the definition the model reads:
+
+```python
+from relweave.schema import Entity, Relation, Schema
+
+class Ship(Entity):
+    """A vessel."""
+
+class Port(Entity):
+    """A harbour."""
+
+class DockedAt(Relation[Ship, Port]):
+    """The Ship lies in the Port."""
+
+SHIPPING = Schema(name="shipping", entities=[Ship, Port], relations=[DockedAt])
+```
+
+Prompts, decoding grammars, validation and scoring are derived from the classes. A model only knows the types it was
+trained on: for your own schema, label data and train both parts as described in `docs/recipe-own-schema.md`, then
+run with `--schema path/to/module.py:SHIPPING --weights <your directory>`.
+
+## How it decides relations
+
+- **Generator.** Qwen3-4B with a LoRA adapter writes entity lines and relation lines under a grammar derived from the
+  schema, so every output parses and every relation is legal for its endpoint types.
+- **Pair head.** A second LoRA adapter on the same base plus a small MLP reads the text, the generator's entity lines
+  and one probe per entity pair, and scores every relation type and direction against a learned threshold.
+- **Union.** A relation the generator wrote is kept unless the head scores it at or below the cut (-2.0); every
+  relation the head scores above the margin (+0.5) is added when it is legal. Both values were chosen on validation.
+
+## Results
+
+Typed relation F1 (strict: both endpoints aligned to gold entities, type and direction right) on held-out English
+business Wikipedia chunks that share no entities or facts with training:
+
+| system | validation | test |
+|---|---|---|
+| 4B generator alone | 0.650 | 0.684 |
+| relweave-4b-base (generator + pair head, union) | 0.781 | 0.783 |
+
+The test set has 105 chunks, so one test score is uncertain by about +-0.045. Two independent labelling
+passes agree at about 0.88. Details: `docs/methodology.md`.
+
+## Limits
+
+- English only; trained on business Wikipedia text, which is cleaner than news or filings.
+- The published weights know only the business schema above.
+- At most 40 entities and 40 relations per chunk (chunks are about 200 words, so this rarely binds).
+- Long coordinated lists are the main error source: later list items are often missed.
+- Entity merging across chunks is rule-based (names, overlap, descriptions); it can join a company with a renamed
+  predecessor or keep two spellings apart.
+
+## Training on your own data
+
+`docs/recipe-own-schema.md` walks through it: chunk documents (`relweave label ingest`), have a frontier model label
+them (`relweave label prompts`, `relweave label import`), train the generator (`relweave train-generator`) and the
+pair head (`relweave train-head`), and evaluate (`relweave generate`, `relweave score`, `relweave eval`).
+`docs/methodology.md` documents how `relweave-4b-base` itself was trained.
+
+## Licence
+
+The code and the model weights (chrullis/relweave-4b-base) are licensed under the Apache License 2.0 (`LICENSE`). The
+weights were trained on English Wikipedia passages (CC BY-SA 4.0; attribution: Wikipedia contributors,
+https://en.wikipedia.org); redistributing the training text or labels derived from it falls under CC BY-SA 4.0. The base
+model Qwen3-4B is Apache 2.0. Details: `docs/methodology.md`, Section 9.
+
+## Links
+
+- Model: https://huggingface.co/chrullis/relweave-4b-base
+- Methodology: `docs/methodology.md`
+- Training on your own schema: `docs/recipe-own-schema.md`
