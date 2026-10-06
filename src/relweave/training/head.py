@@ -148,14 +148,14 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
         keep_logits = torch.arange(a - 1, b - 1, device="cuda") if kind == "gold" else 1
         try:  # one unusually long example must not end the run: skip it (a failed backward may leave part of
             # its gradient in the accumulation, a negligible error next to losing the run)
-            out = model(input_ids=torch.tensor([ids], device="cuda"), position_ids=torch.tensor([posn], device="cuda"),
+            fwd = model(input_ids=torch.tensor([ids], device="cuda"), position_ids=torch.tensor([posn], device="cuda"),
                         attention_mask=m[None, None].cuda(), output_hidden_states=True, logits_to_keep=keep_logits)
-            hs = torch.cat([out.hidden_states[k][0, last] for k in layers], dim=-1).float()
+            hs = torch.cat([fwd.hidden_states[k][0, last] for k in layers], dim=-1).float()
             loss_rel = at_loss(head(hs), y)
             loss = loss_rel
             loss_lm = torch.zeros((), device="cuda")
             if kind == "gold":  # entity-line tokens of the gold answer: keep generation intact
-                logits = out.logits[0].float()
+                logits = fwd.logits[0].float()
                 loss_lm = torch.nn.functional.cross_entropy(logits, torch.tensor(ent_ids, device="cuda"))
                 loss = loss + lm_weight * loss_lm
             (loss / grad_accum).backward()
@@ -163,9 +163,9 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
         except torch.OutOfMemoryError:
             skipped += 1
             print(f"skipped example {n}: out of memory ({len(ids)} tokens, {len(pairs)} probes)", flush=True)
-            out = hs = loss = loss_rel = loss_lm = logits = None  # free the failed example's tensors
+            fwd = hs = loss = loss_rel = loss_lm = logits = None  # free the failed example's tensors
             torch.cuda.empty_cache()
-        out = hs = None
+        fwd = hs = None
         if n % grad_accum == 0 or n == len(examples):
             torch.nn.utils.clip_grad_norm_(params + list(head.parameters()), 1.0)
             opt.step(); sched.step(); opt.zero_grad()
