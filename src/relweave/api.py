@@ -19,7 +19,9 @@ class Extractor:
     generator/ and head/; generator, head: local directories overriding either part (a training run works).
     model: the base model (hub id or path). schema: a Schema, a registered name or "path/to/module.py:NAME"; None
     takes the schema the generator was trained for. cut, margin: union settings (default from the head's config:
-    -2.0 and +0.5 for the published model).
+    -2.0 and +0.5 for the published model). generator_url: generate on an HTTP server instead of locally, e.g.
+    "http://localhost:8000" for `vllm serve chrullis/relweave-4b-base` (the merged generator at the repository root);
+    the pair head still runs locally.
 
     batch_size: chunks generated together (from all documents of a run_many/iter_run call, sorted by length);
     "auto" picks the largest of 1/2/4/8 that fits the free GPU memory after the generator has loaded, and any batch
@@ -36,13 +38,15 @@ class Extractor:
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
                  max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
-                 cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto"):
+                 cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
+                 generator_url: str | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
-        self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin)
+        self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
+                                     generator_url=generator_url)
         self.schema = self._ce.schema
         if sequential is None:
             import torch

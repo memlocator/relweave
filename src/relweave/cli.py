@@ -48,12 +48,15 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                             "head's config, +0.5)"),
         batch_size: str = typer.Option("auto", help="chunks generated together: 1, 2, 4, 8 ... or auto"),
         max_words: int = typer.Option(200, help="words per chunk"),
-        reserve_mb: int = typer.Option(500, help="GPU memory left free")) -> None:
+        reserve_mb: int = typer.Option(500, help="GPU memory left free"),
+        generator_url: str | None = typer.Option(None, help="generate on this HTTP server (vLLM serving the merged "
+                                                 "generator, e.g. http://localhost:8000); the head runs locally")) -> None:
     """Extract a graph from each file; all files go through one Extractor, so each model loads once."""
     import relweave
     try:
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
-                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, reserve_mb=reserve_mb)
+                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, reserve_mb=reserve_mb,
+                                generator_url=generator_url)
         many = len(files) > 1
         if many:
             out.mkdir(parents=True, exist_ok=True)

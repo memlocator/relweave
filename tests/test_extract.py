@@ -308,3 +308,37 @@ def test_cap_memory_uses_memory_reserved(monkeypatch):
     monkeypatch.setattr(torch.cuda, "set_per_process_memory_fraction", lambda f: calls.append(f))
     ex.cap_memory(500)
     assert calls == [pytest.approx(4500 / 8000)]
+
+
+def test_remote_generator_sends_the_chunk_grammar_and_cuts_a_block_after_a_repeat(tmp_path):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from transformers import AutoTokenizer
+
+    from relweave.remote import RemoteExtractor
+    sent = []
+    answer = ("E1 Org: Acme\nE2 Place: Oslo\nE3 Place: Norway\nS1\nR HEADQUARTERED_IN E1 E2 asserted\n"
+              "R HEADQUARTERED_IN E1 E2 asserted\nR OPERATES_IN E1 E3 asserted\n")
+
+    class Server(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            sent.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            body = json.dumps({"choices": [{"text": answer}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), Server)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B").save_pretrained(tmp_path)  # prompt rendering only
+    [r] = RemoteExtractor(f"http://127.0.0.1:{srv.server_port}", tmp_path, model="m", compact=True).extract_batch(
+        [("c1", "Acme is based in Oslo, Norway.")])
+    srv.shutdown()
+    assert sent[0]["model"] == "m" and sent[0]["temperature"] == 0.0 and "S1" in sent[0]["structured_outputs"]["grammar"]
+    assert {x.type for x in r.output.relations} == {"HEADQUARTERED_IN"}  # OPERATES_IN came after the repeat

@@ -27,11 +27,12 @@ BATCH_CHOICES = (8, 4, 2, 1)
 
 def resolve_weights(spec: str | Path) -> Path:
     """A local directory as it is; anything else is a Hub repository id, downloaded (cached) with
-    huggingface_hub.snapshot_download."""
+    huggingface_hub.snapshot_download (only the parts relweave reads: generator/, head/, schema.json; the merged
+    model at a repository's root is for HTTP servers such as vLLM)."""
     if Path(spec).is_dir():
         return Path(spec)
     from huggingface_hub import snapshot_download
-    return Path(snapshot_download(str(spec)))
+    return Path(snapshot_download(str(spec), allow_patterns=["generator/*", "head/*", "schema.json", "README.md"]))
 
 
 def generator_settings(generator_dir: str | Path) -> dict:
@@ -187,11 +188,15 @@ class ChunkExtractor:
 
     generator, head: directories (exported layout or training runs); head None: generation only. schema: a Schema, a registered name or
     "path.py:NAME"; None takes the schema the generator was trained for. cut, margin: union settings; None takes
-    them from the head's config (else relweave.union.CUT and MARGIN)."""
+    them from the head's config (else relweave.union.CUT and MARGIN). generator_url: generate on an HTTP server (vLLM
+serving the merged generator, relweave.remote) instead of loading the generator; the generator directory then only
+supplies the prompt settings and tokenizer."""
+
+    generator_url: str | None = None
 
     def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
-                 margin: float | None = None, max_new_tokens: int | None = None):
+                 margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None):
         from relweave import union as un
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
@@ -210,6 +215,7 @@ class ChunkExtractor:
         self.margin = margin if margin is not None else union_cfg.get("margin", un.MARGIN)
         # the base the adapters were trained on (exported config), unless the caller names one
         self.model, self.group = model or settings.get("base_model", DEFAULT_MODEL), group
+        self.generator_url = generator_url
         self.compact, self.conditioned = settings.get("compact_prompt", False), settings.get("conditioned", False)
         self.max_new_tokens = max_new_tokens or settings.get("max_new_tokens", 2500)
         cap_memory(reserve_mb)
@@ -227,12 +233,22 @@ class ChunkExtractor:
     # -- loading -----------------------------------------------------------------------------------------------
 
     def load_generator(self) -> None:
+        if self._gen is None and self.generator_url:
+            from relweave.remote import RemoteExtractor
+            self._gen = RemoteExtractor(self.generator_url, self._tokenizer_dir(), fmt="sentences", compact=self.compact,
+                                        schema=self.schema, conditioned=self.conditioned,
+                                        max_new_tokens=self.max_new_tokens)
         if self._gen is None:
             from relweave.generator import QwenExtractor
             from relweave.head import adapter_dir
             self._gen = QwenExtractor(model_id=self.model, adapter=adapter_dir(self.generator_dir), constrained=True,
                                       fmt="sentences", compact=self.compact, stop_on_repeat=True, schema=self.schema,
                                       conditioned=self.conditioned, max_new_tokens=self.max_new_tokens)
+
+    def _tokenizer_dir(self) -> Path:
+        from relweave.head import adapter_dir
+        d = adapter_dir(self.generator_dir)
+        return d if (d / "tokenizer_config.json").exists() else Path(self.model)
 
     def unload_generator(self) -> None:
         self._gen = None
@@ -286,7 +302,10 @@ class ChunkExtractor:
         its exception; no chunk is lost."""
         import torch
         self.load_generator()
-        b = self.auto_batch(items) if batch_size == "auto" else int(batch_size)
+        if self.generator_url:  # the server batches; one call per 256 chunks keeps a failure's retry small
+            b = 256
+        else:
+            b = self.auto_batch(items) if batch_size == "auto" else int(batch_size)
         order = sorted(items, key=lambda kv: len(kv[1]))
         out: dict = {}
         k = 0
