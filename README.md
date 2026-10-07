@@ -47,9 +47,50 @@ relweave run a.txt b.txt c.txt --out graphs/ --graphml
 ```
 
 Useful options (`relweave run --help`): `--weights` (a Hub repository or a local directory with `generator/` and
-`head/`), `--schema`, `--cut` and `--margin` (the union rule), `--batch-size` (default `auto`), `--max-words` (chunk
+`head/`; `chrullis/relweave-1.7b-base` for the smaller model), `--generator-url` (see below), `--schema`, `--cut` and `--margin` (the union rule), `--batch-size` (default `auto`), `--max-words` (chunk
 size). If a model cannot be loaded (for example not enough GPU memory) the command fails with an error and a non-zero
 exit code; a single chunk that fails becomes a warning in the graph and the document continues.
+
+## Models
+
+| model | system F1 (validation / test) |
+|---|---|
+| `chrullis/relweave-4b-base` (default) | 0.781 / 0.783 |
+| `chrullis/relweave-1.7b-base` | 0.737 / 0.722 |
+
+Over 377 held-out chunks the 1.7B model scores 0.048 below the 4B (95% interval 0.030 to 0.067).
+
+## Serving the generator with vLLM
+
+Generation is most of the run time. Each model repository holds, at its root, the generator as an ordinary bf16
+model (the 4-bit base the adapter was trained on, dequantized, with the adapter merged in), so a standard vLLM
+server or container serves it directly:
+
+```
+vllm serve chrullis/relweave-4b-base --quantization fp8 --max-model-len 4096     # 4B: fp8 weights, ~4.5 GB
+vllm serve chrullis/relweave-1.7b-base --max-model-len 4096                      # 1.7B: bf16, ~3.5 GB
+```
+
+relweave then sends each chunk to the server with its decoding grammar and runs the pair head locally:
+
+```python
+ex = Extractor(weights="chrullis/relweave-4b-base", generator_url="http://localhost:8000")
+```
+
+```
+relweave run report.txt --out graph.json --generator-url http://localhost:8000
+```
+
+On one 8 GB GPU (test set of 64 chunks), the generator ran at about 42 chunks per minute for the 4B (fp8) and 96 for
+the 1.7B against 4.5 and 6 with the default transformers backend, at the same F1 (4B system 0.771 vs 0.770, 1.7B 0.749
+vs 0.736). On an 8 GB card the 4B needs `--max-model-len 3072 --max-num-batched-tokens 2048 --gpu-memory-utilization 0.84`
+(and then leaves no room for the pair head: run the head afterwards or on another GPU). Without a CUDA toolkit
+installed, start vLLM with `VLLM_USE_FLASHINFER_SAMPLER=0`. Serving the adapter
+on the original full-precision Qwen3 instead of the merged model loses about 0.03 F1 (the adapter learned against the
+4-bit weights); `scripts/merge_for_vllm.py` builds the merged model from your own trained weights.
+
+The pair head needs the model's hidden states, which vLLM does not return, so it runs locally in transformers. On a
+GPU shared with the server, leave it about 3 GB (for example `--gpu-memory-utilization 0.5`).
 
 ## Output
 
@@ -125,13 +166,13 @@ pair head (`relweave train-head`), and evaluate (`relweave generate`, `relweave 
 
 ## Licence
 
-The code and the model weights (chrullis/relweave-4b-base) are licensed under the Apache License 2.0 (`LICENSE`). The
+The code and the model weights (chrullis/relweave-4b-base, chrullis/relweave-1.7b-base) are licensed under the Apache License 2.0 (`LICENSE`). The
 weights were trained on English Wikipedia passages (CC BY-SA 4.0; attribution: Wikipedia contributors,
 https://en.wikipedia.org); redistributing the training text or labels derived from it falls under CC BY-SA 4.0. The base
-model Qwen3-4B is Apache 2.0. Details: `docs/methodology.md`, Section 9.
+models Qwen3-4B and Qwen3-1.7B are Apache 2.0. Details: `docs/methodology.md`, Section 9.
 
 ## Links
 
-- Model: https://huggingface.co/chrullis/relweave-4b-base
+- Models: https://huggingface.co/chrullis/relweave-4b-base, https://huggingface.co/chrullis/relweave-1.7b-base
 - Methodology: `docs/methodology.md`
 - Training on your own schema: `docs/recipe-own-schema.md`

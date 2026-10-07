@@ -184,6 +184,7 @@ because Wikidata records what is true, while the labels record what a passage st
 | 4B generator + 4B pair head, union | 0.759 | 0.754 |
 | + head trained on the generator's own entity lists, 200 probes | 0.773 | 0.778 |
 | **+ 500 list-rich chunks of new labels (relweave-4b-base)** | **0.783** | **0.781** |
+| 1.7B, same data and recipe as relweave-4b-base (relweave-1.7b-base) | 0.722 | 0.737 |
 
 Typed relation F1 is strict (Section 4). Test precision 0.818, recall 0.751 for the final system; the union adds
 +0.099 over the generator alone (95% interval +0.076 to +0.125).
@@ -204,6 +205,17 @@ Contribution of each step:
 | head trained on the generator's own entity lists, 200 probes | +0.014 test, +0.024 validation |
 | Qwen3-4B instead of 1.7B | +0.05 to +0.07 at equal data, about +0.04 for the full system |
 | 500 more list-rich chunks | +0.003 validation, not significant: the learning curve has flattened |
+
+relweave-1.7b-base is the same recipe on Qwen3-1.7B (generator continued from a 2,000-chunk pilot, 1 epoch over all
+10,765 chunks; head stage 1 on its own entity lists). Over validation, test and the fresh test set (377 chunks) it
+scores 0.732 against the 4B's 0.780: -0.048, 95% interval -0.067 to -0.030.
+
+Serving. The adapters are trained on the 4-bit base, and they learn corrections for its rounding: the same adapter on
+the original full-precision Qwen3 loses about 0.03 generator F1 (1.7B, fresh test set: 0.617 on the 4-bit base, 0.583
+on the original). The published repositories therefore hold, at their root, the 4-bit base dequantized to bf16 with the
+generator adapter merged (`scripts/merge_for_vllm.py`), which reproduces the trained model: on vLLM, 1.7B generator
+0.626 and system 0.749 (transformers 0.617 / 0.736); 4B with vLLM's fp8 weights, system 0.771 (transformers 0.770), on
+64 chunks.
 
 Measured negative results (filters, loss weighting, DPO-style training on invented lines, grounded decoding, pair-to-pair
 attention, a second pass on the same data, Re-DocRED pre-training) are listed in Section 7 of the whitepaper

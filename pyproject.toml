@@ -1,6 +1,6 @@
 [project]
 name = "relweave"
-version = "0.1.0"
+version = "0.1.1"
 description = "Text of any length plus a schema to a typed knowledge graph"
 readme = "README.md"
 license = "Apache-2.0"

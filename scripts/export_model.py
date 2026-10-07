@@ -83,7 +83,15 @@ def export(generator: Path, head: Path, out: Path, schema=None, base_model: str 
     return out
 
 
+def _base_name(base_model: str) -> str:
+    """"Qwen3-4B" for unsloth/qwen3-4b-unsloth-bnb-4bit; the id itself when it does not name a Qwen3 size."""
+    import re
+    m = re.search(r"qwen3-([\d.]+)b", base_model.lower())
+    return f"Qwen3-{m.group(1)}B" if m else base_model
+
+
 def model_card(schema, base_model: str, repo_id: str, cut: float, margin: float) -> str:
+    original = _base_name(base_model)
     relations = "\n".join(f"| {e} | {'|'.join(sorted(schema.sources(e)))} -> {'|'.join(sorted(schema.targets(e)))} | "
                           f"{schema.definition(e)} |" for e in schema.edge_names())
     return f"""---
@@ -101,7 +109,7 @@ tags:
 
 # {repo_id.split("/")[-1]}
 
-Two LoRA adapters on `{base_model}` (Qwen/Qwen3-4B quantized to 4 bits) that turn English text into a typed
+Two LoRA adapters on `{base_model}` (Qwen/{original} quantized to 4 bits) that turn English text into a typed
 knowledge graph with the [relweave](https://github.com/memlocator/relweave) library: a generator that writes entities
 (with all their mentions) and relations, and a pair-classification head that scores every entity pair; the library
 keeps a generated relation unless the head scores it at or below {cut} and adds every relation the head scores above
@@ -117,7 +125,11 @@ g = Extractor(weights="{repo_id}").run(open("report.txt").read())
 print(g.to_json())  # JSON Graph Format v2
 ```
 
-Command line: `relweave run report.txt --out graph.json`. Needs a CUDA GPU with about 6 GB free.
+Command line: `relweave run report.txt --out graph.json --weights {repo_id}`.
+
+Fast generation with vLLM (after `scripts/merge_for_vllm.py` has put the merged generator at the root):
+`vllm serve {repo_id}`, then `Extractor(weights="{repo_id}", generator_url="http://localhost:8000")`; the pair head
+runs locally.
 
 ## Files
 
@@ -125,6 +137,8 @@ Command line: `relweave run report.txt --out graph.json`. Needs a CUDA GPU with 
 - `head/`: PEFT adapter, tokenizer, `head.safetensors` (the MLP over the probe hidden states) and `head_config.json`
   (schema, label order, layers read, union settings).
 - `schema.json`: the schema `{schema.name}`.
+- root (`config.json`, `model.safetensors`, tokenizer): the generator as a plain bf16 model for vLLM or other
+  servers: the 4-bit base dequantized with the adapter merged (`scripts/merge_for_vllm.py`).
 
 ## Schema
 
@@ -148,7 +162,7 @@ TODO: from docs/methodology.md, Section 8 (English business text, the schema abo
 The code (relweave) and these weights are licensed under the Apache License 2.0. The adapters were trained on English
 Wikipedia passages (CC BY-SA 4.0; attribution: Wikipedia contributors, https://en.wikipedia.org), labelled by a
 language model; redistributing the training text or labels derived from it falls under CC BY-SA 4.0. The base model
-Qwen3-4B is Apache 2.0. Details: docs/methodology.md, Section 9.
+{original} is Apache 2.0. Details: docs/methodology.md, Section 9.
 
 ## Citation
 

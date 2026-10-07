@@ -452,6 +452,12 @@ Face Hub yourself), use `scripts/export_model.py --generator runs/projects/gen -
 projects.py:PROJECTS --cut <cut> --margin <margin> --out models/projects`; the cut-offs go into `head_config.json`, so
 the extractor uses them by default.
 
+To serve the generator with vLLM (much faster generation, see the README), add the merged model to that folder:
+`uv run python scripts/merge_for_vllm.py models/projects models/projects` writes the dequantized 4-bit base with your
+adapter merged into the folder's root, so `vllm serve models/projects` loads it and `Extractor(weights="models/projects",
+generator_url="http://localhost:8000")` uses it. Do not serve your adapter on the original full-precision base: it was
+trained against the 4-bit weights and loses about 0.03 F1 there.
+
 Schema checks. The extractor reads the generator's settings (`relweave_config.json`, or `train_summary.json` of a
 training run) and the head's `head_config.json` (or `train_summary.json`). Each must name `projects`, equal to the
 schema's name. Otherwise it raises `ValueError` ("generator was trained on schema ..." or "pair head was trained on
