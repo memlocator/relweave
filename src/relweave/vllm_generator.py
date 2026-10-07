@@ -43,7 +43,7 @@ class VllmExtractor:
     def __init__(self, model_id: str, adapter: Path | None, max_new_tokens: int = 2500, fmt: str = STUDENT_FORMAT,
                  compact: bool = False, schema: Schema | None = None, conditioned: bool = False,
                  stop_on_repeat: bool = True, gpu_memory_utilization: float = 0.8, max_model_len: int = 8192,
-                 lora_rank: int = 32, quantization: str | None = None):
+                 lora_rank: int = 32, quantization: str | None = None, max_num_batched_tokens: int | None = None):
         from transformers import AutoTokenizer
         from vllm import LLM
         from vllm.lora.request import LoRARequest
@@ -56,7 +56,8 @@ class VllmExtractor:
         self.tokenizer = AutoTokenizer.from_pretrained(str(tok_source))
         self.llm = LLM(model=model_id, quantization=quantization, enable_lora=adapter is not None, max_lora_rank=lora_rank,
                        gpu_memory_utilization=gpu_memory_utilization, max_model_len=max_model_len,
-                       enable_prefix_caching=True)
+                       enable_prefix_caching=True,
+                       **({"max_num_batched_tokens": max_num_batched_tokens} if max_num_batched_tokens else {}))
         self.lora = LoRARequest("generator", 1, str(adapter)) if adapter is not None else None
 
     def _params(self, text: str):

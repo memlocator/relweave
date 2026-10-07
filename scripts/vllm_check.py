@@ -23,6 +23,8 @@ def main() -> None:
     ap.add_argument("--gpu-mem", type=float, default=0.8)
     ap.add_argument("--model", required=True, help="full-precision base")
     ap.add_argument("--quantization", default=None)
+    ap.add_argument("--max-model-len", type=int, default=8192)
+    ap.add_argument("--max-batched-tokens", type=int, default=None, help="prefill step size (less activation memory)")
     ap.add_argument("--merged", action="store_true", help="--model is a merged model (merge_for_vllm.py)")
     a = ap.parse_args()
     s = generator_settings(a.weights / "generator")
@@ -30,7 +32,8 @@ def main() -> None:
     t0 = time.perf_counter()
     ex = VllmExtractor(a.model, None if a.merged else a.weights / "generator", s.get("max_new_tokens", 2500), s["format"],
                        s["compact_prompt"], registered_schema(s["schema"]), s["conditioned"],
-                       gpu_memory_utilization=a.gpu_mem, quantization=a.quantization)
+                       gpu_memory_utilization=a.gpu_mem, quantization=a.quantization,
+                       max_model_len=a.max_model_len, max_num_batched_tokens=a.max_batched_tokens)
     t1 = time.perf_counter()
     res = ex.extract_batch(items)
     t2 = time.perf_counter()
