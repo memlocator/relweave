@@ -7,12 +7,12 @@ import json
 from pathlib import Path
 
 from relweave.chunk import Chunk
-from relweave.extract import DEFAULT_MODEL, ChunkExtractor
+from relweave.extract import ChunkExtractor
 from relweave.formats import load_results, save_results
 from relweave.training.data import load_chunks
 
 
-def generate(chunks_path: Path, out: Path, generator: Path, model: str = DEFAULT_MODEL, schema=None,
+def generate(chunks_path: Path, out: Path, generator: Path, model: str | None = None, schema=None,
              batch_size: int | str = "auto", reserve_mb: int = 500, limit: int | None = None) -> int:
     """The generator's results on every chunk -> out (JSONL). Returns the number of chunks written; a chunk whose
     generation raised is saved as an error result."""
@@ -28,7 +28,7 @@ def generate(chunks_path: Path, out: Path, generator: Path, model: str = DEFAULT
     return len(results)
 
 
-def score(chunks_path: Path, results_path: Path, out: Path, generator: Path, head: Path, model: str = DEFAULT_MODEL,
+def score(chunks_path: Path, results_path: Path, out: Path, generator: Path, head: Path, model: str | None = None,
           schema=None, reserve_mb: int = 500) -> int:
     """The pair head's scores for every entity pair of the generator's results -> out (JSON). Returns the number of
     chunks scored."""

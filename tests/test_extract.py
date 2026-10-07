@@ -182,6 +182,17 @@ def test_the_schema_defaults_to_the_generator_s_and_union_settings_come_from_the
     assert (ChunkExtractor(g, h, cut=-1.0, margin=0.0).cut, ChunkExtractor(g, h, margin=0.0).margin) == (-1.0, 0.0)
 
 
+def test_the_base_model_comes_from_the_generator_config_unless_given(tmp_path, no_cap):
+    import json
+
+    from relweave.extract import DEFAULT_MODEL, ChunkExtractor
+    g, h = _dirs(tmp_path)
+    assert ChunkExtractor(g, h).model == DEFAULT_MODEL
+    cfg = json.loads((g / "relweave_config.json").read_text())
+    (g / "relweave_config.json").write_text(json.dumps({**cfg, "base_model": "small/base"}))
+    assert ChunkExtractor(g, h).model == "small/base" and ChunkExtractor(g, h, model="x").model == "x"
+
+
 def test_a_user_schema_file_is_accepted_when_generator_and_head_were_trained_on_it(tmp_path, no_cap):
     from relweave.extract import ChunkExtractor
     (tmp_path / "ships.py").write_text(

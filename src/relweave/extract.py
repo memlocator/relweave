@@ -189,7 +189,7 @@ class ChunkExtractor:
     "path.py:NAME"; None takes the schema the generator was trained for. cut, margin: union settings; None takes
     them from the head's config (else relweave.union.CUT and MARGIN)."""
 
-    def __init__(self, generator: str | Path, head: str | Path | None, model: str = DEFAULT_MODEL, schema=None,
+    def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
                  margin: float | None = None, max_new_tokens: int | None = None):
         from relweave import union as un
@@ -208,7 +208,8 @@ class ChunkExtractor:
         union_cfg = self.head_config.get("union", {})
         self.cut = cut if cut is not None else union_cfg.get("cut", un.CUT)
         self.margin = margin if margin is not None else union_cfg.get("margin", un.MARGIN)
-        self.model, self.group = model, group
+        # the base the adapters were trained on (exported config), unless the caller names one
+        self.model, self.group = model or settings.get("base_model", DEFAULT_MODEL), group
         self.compact, self.conditioned = settings.get("compact_prompt", False), settings.get("conditioned", False)
         self.max_new_tokens = max_new_tokens or settings.get("max_new_tokens", 2500)
         cap_memory(reserve_mb)

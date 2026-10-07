@@ -183,10 +183,9 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              batch_size: str = typer.Option("auto", help="1, 2, 4, 8 ... or auto"),
              limit: int | None = None, reserve_mb: int = 500) -> None:
     """The generator's results on every chunk of a chunk file."""
-    from relweave.extract import DEFAULT_MODEL
     from relweave.training.predict import generate as run
     gen, _ = _parts(weights, generator, None, need_head=False)
-    n = run(chunks, out, gen, model or DEFAULT_MODEL, _schema(schema), _batch(batch_size), reserve_mb, limit)
+    n = run(chunks, out, gen, model, _schema(schema), _batch(batch_size), reserve_mb, limit)
     typer.echo(f"{n} results -> {out}")
 
 
@@ -200,10 +199,9 @@ def score(chunks: Path = typer.Argument(..., help="chunk file"),
           model: str | None = typer.Option(None, help="base model path or hub id"),
           schema: str | None = typer.Option(None, help=SCHEMA_HELP), reserve_mb: int = 500) -> None:
     """The pair head's score for every entity pair of the generator's results."""
-    from relweave.extract import DEFAULT_MODEL
     from relweave.training.predict import score as run
     gen, hd = _parts(weights, generator, head, need_head=True)
-    n = run(chunks, results, out, gen, hd, model or DEFAULT_MODEL, _schema(schema), reserve_mb)
+    n = run(chunks, results, out, gen, hd, model, _schema(schema), reserve_mb)
     typer.echo(f"{n} chunks scored -> {out}")
 
 

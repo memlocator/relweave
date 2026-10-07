@@ -42,14 +42,13 @@ class Extractor:
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
-        model = model or ex.DEFAULT_MODEL
         self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin)
         self.schema = self._ce.schema
         if sequential is None:
             import torch
             sequential = torch.cuda.mem_get_info()[0] < 7000 * 2**20
         self.sequential = sequential
-        self.model_info = {"base": str(model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
+        self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
                            "cut": self._ce.cut, "margin": self._ce.margin}
 
