@@ -111,12 +111,16 @@ tokens per chunk against 6,100 from scratch. Corrected labels agree with indepen
 typed F1 on ordinary chunks (0.803 on dense list chunks); two independent from-scratch passes agree at about 0.88.
 The risk is anchoring: correctors kept some borderline draft relations that a from-scratch labeller would not write.
 
+The generator also trained on 7,252 overlapping windows of a few sentences cut from the 2,859 chunks (labels
+restricted to the window), 10,111 examples in all, so it sees short and long inputs. The data is published as
+[chrullis/relweave-business-data](https://huggingface.co/datasets/chrullis/relweave-business-data) (CC BY-SA 4.0).
+
 Wikidata was tried as a source of candidate labels and rejected: its facts cover only 11-12% of gold relations,
 because Wikidata records what is true, while the labels record what a passage states.
 
 | split | chunks | articles | labels |
 |---|---|---|---|
-| training | 2,859 + 500 list-rich chunks | 460 + 210 | completed (new chunks: corrected drafts) |
+| training | 2,859 + 500 list-rich chunks, plus 7,252 windows | 460 + 210 | completed (new chunks: corrected drafts) |
 | validation | 208 | | completed |
 | test | 105 | | completed and audited |
 | fresh test | 64 | 13 | one pass; scored once |
@@ -207,7 +211,7 @@ Contribution of each step:
 | 500 more list-rich chunks | +0.003 validation, not significant: the learning curve has flattened |
 
 relweave-1.7b-base is the same recipe on Qwen3-1.7B (generator continued from a 2,000-chunk pilot, 1 epoch over all
-10,765 chunks; head stage 1 on its own entity lists). Over validation, test and the fresh test set (377 chunks) it
+10,765 training rows (10,111 distinct texts: the 2,859 chunks and their windows); head stage 1 on its own entity lists). Over validation, test and the fresh test set (377 chunks) it
 scores 0.732 against the 4B's 0.780: -0.048, 95% interval -0.067 to -0.030.
 
 Serving. The adapters are trained on the 4-bit base, and they learn corrections for its rounding: the same adapter on

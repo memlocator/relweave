@@ -184,5 +184,6 @@ models Qwen3-4B and Qwen3-1.7B are Apache 2.0. Details: `docs/methodology.md`, S
 ## Links
 
 - Models: https://huggingface.co/chrullis/relweave-4b-base, https://huggingface.co/chrullis/relweave-1.7b-base
+- Training and evaluation data: https://huggingface.co/datasets/chrullis/relweave-business-data (CC BY-SA 4.0)
 - Methodology: `docs/methodology.md`
 - Training on your own schema: `docs/recipe-own-schema.md`
