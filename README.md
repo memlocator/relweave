@@ -53,12 +53,17 @@ exit code; a single chunk that fails becomes a warning in the graph and the docu
 
 ## Models
 
-| model | system F1 (validation / test) |
-|---|---|
-| `chrullis/relweave-4b-base` (default) | 0.781 / 0.783 |
-| `chrullis/relweave-1.7b-base` | 0.737 / 0.722 |
+| model | system F1 (validation / test) | generator on vLLM, 8 GB GPU | generator, transformers backend | vLLM weights in memory |
+|---|---|---|---|---|
+| [relweave-4b-base](https://huggingface.co/chrullis/relweave-4b-base) | 0.781 / 0.783 | about 42 chunks/min (fp8) | about 4.5 chunks/min | 4.2 GB (fp8) |
+| [relweave-1.7b-base](https://huggingface.co/chrullis/relweave-1.7b-base) | 0.737 / 0.722 | about 96 chunks/min (bf16) | about 6 chunks/min | 3.3 GB (bf16) |
 
-Over 377 held-out chunks the 1.7B model scores 0.048 below the 4B (95% interval 0.030 to 0.067).
+Speeds on one RTX 3070 Ti (8 GB), 64 test chunks of about 200 words. Over 377 held-out chunks the 1.7B scores 0.048
+below the 4B (95% interval 0.030 to 0.067).
+
+Each model repository holds the generator twice: as a LoRA adapter in `generator/` (used by relweave's default
+transformers backend on the 4-bit base) and, at the root, merged into the dequantized 4-bit base as one plain bf16
+model for vLLM. The pair head (`head/`, its own LoRA plus a classifier) is never merged and always runs in relweave.
 
 ## Serving the generator with vLLM
 
@@ -69,7 +74,12 @@ server or container serves it directly:
 ```
 vllm serve chrullis/relweave-4b-base --quantization fp8 --max-model-len 4096     # 4B: fp8 weights, ~4.5 GB
 vllm serve chrullis/relweave-1.7b-base --max-model-len 4096                      # 1.7B: bf16, ~3.5 GB
+docker run --gpus all -p 8000:8000 --ipc=host vllm/vllm-openai --model chrullis/relweave-4b-base --quantization fp8
 ```
+
+The LoRA is already merged into that model, so vLLM needs no `--enable-lora` (tested with vLLM 0.31). The endpoint is
+a component, not a chat model: it writes relweave's line format only under the prompt and per-chunk grammar relweave
+sends, so call it through relweave.
 
 relweave then sends each chunk to the server with its decoding grammar and runs the pair head locally:
 
