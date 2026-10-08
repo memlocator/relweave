@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 
 DEFAULT_WEIGHTS = "chrullis/relweave-4b-zeroshot"
-DEFAULT_THRESHOLD = 0.5
+DEFAULT_THRESHOLD = 0.8  # between the best values for short (about 0.7) and dense text (about 0.9)
 INSTRUCTION = ("For each question below, answer yes if the text states or clearly implies that the relation holds "
                "from the source to the target, otherwise no.")
 GRID = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99)

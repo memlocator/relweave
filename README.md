@@ -168,7 +168,8 @@ text (about 0.7 for short passages, about 0.9 for dense ones); calibrate it on a
 ## Results
 
 Typed relation F1 (strict: both endpoints aligned to gold entities, type and direction right) on held-out English
-business Wikipedia chunks that share no entities or facts with training:
+business Wikipedia chunks from articles not used in training (some names and facts recur; see
+`docs/methodology.md`, Section 4):
 
 | system | validation | test |
 |---|---|---|

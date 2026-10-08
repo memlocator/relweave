@@ -27,7 +27,7 @@ class Extractor:
     the generator's: Person, Org, Place, Object, Event, Coordinate for the published models); the generator finds
     the entities, and every relation type of your schema is scored on every fitting entity pair by the zero-shot
     adapter (zeroshot_weights, default chrullis/relweave-4b-zeroshot) instead of the trained head. threshold: one
-    number or {type: number}, see relweave.zeroshot.calibrate; the best value depends on the text (about 0.7 on short
+    number or {type: number} (default relweave.zeroshot.DEFAULT_THRESHOLD), see relweave.zeroshot.calibrate; the best value depends on the text (about 0.7 on short
     passages, about 0.9 on dense ones). Relations carry the score p(yes) and origin "zeroshot".
 
     batch_size: chunks generated together (from all documents of a run_many/iter_run call, sorted by length);
@@ -49,7 +49,7 @@ class Extractor:
                  max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
-                 threshold: float | dict = 0.5):
+                 threshold: float | dict | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         if generator is None or head is None:
@@ -58,7 +58,8 @@ class Extractor:
         self._zs = None
         if zeroshot:
             from relweave.schema import load_schema
-            from relweave.zeroshot import DEFAULT_WEIGHTS, ZeroShot
+            from relweave.zeroshot import DEFAULT_THRESHOLD, DEFAULT_WEIGHTS, ZeroShot
+            threshold = DEFAULT_THRESHOLD if threshold is None else threshold
             if schema is None:
                 raise ValueError("zeroshot needs your own schema (relation types with definitions)")
             user = load_schema(schema)

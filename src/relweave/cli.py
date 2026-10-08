@@ -14,6 +14,8 @@ from pathlib import Path
 
 import typer
 
+from relweave.zeroshot import DEFAULT_THRESHOLD
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
@@ -53,7 +55,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                                  "generator, e.g. http://localhost:8000); the head runs locally"),
         zeroshot: bool = typer.Option(False, help="score the relation types of --schema with the zero-shot adapter "
                                       "(types defined at run time; entities still come from the generator)"),
-        threshold: float = typer.Option(0.5, help="zero-shot: keep relations scoring above this (about 0.7 for short "
+        threshold: float | None = typer.Option(None, help=f"zero-shot: keep relations scoring above this (default {DEFAULT_THRESHOLD}; about 0.7 for short "
                                         "passages, 0.9 for dense text)"),
         zeroshot_weights: str | None = typer.Option(None, help="zero-shot adapter (default chrullis/relweave-4b-zeroshot)")) -> None:
     """Extract a graph from each file; all files go through one Extractor, so each model loads once."""

@@ -123,15 +123,15 @@ because Wikidata records what is true, while the labels record what a passage st
 | training | 2,859 + 500 list-rich chunks, plus 7,252 windows | 460 + 210 | completed (new chunks: corrected drafts) |
 | validation | 208 | | completed |
 | test | 105 | | completed and audited |
-| fresh test | 64 | 13 | one pass; scored once |
+| fresh test | 64 | 13 | one pass; not tuned on, later used for size and serving comparisons |
 
 ## 4. Evaluation protocol
 
 - **Split by document.** No document appears in more than one split.
-- **No shared entities or facts.** Evaluation text shares no entities or facts with training text, not just no
-  documents. Training articles that name three or more evaluation people or companies, or the subject of an evaluation
-  article, are excluded. Candidate test articles are checked for relations already present in training
-  (`scripts/holdout_overlap.py`, `scripts/fact_overlap.py`, experiment repository).
+- **Few shared entities or facts.** Beyond splitting by document, training articles that name three or more
+  evaluation people or companies, or the subject of an evaluation article, are excluded, and candidate test articles
+  are checked for relations already present in training (`scripts/holdout_overlap.py`, `scripts/fact_overlap.py`,
+  experiment repository). The exclusion was not complete: 75 of 532 person and company names in the test set (64 of 306 in the fresh test) also occur in training labels, and 10 (24) relation triples recur by name; the fresh test overlaps training on Heineken and Bouygues (review of 2026-10-08).
 - **Metric.** Typed relation F1, strict. A predicted relation counts only if both endpoints align to gold entities (by
   mention-span overlap and type) and the type and direction match.
 - **Ceiling.** Two independent labelling passes agree at about 0.88. An audit found about 8% of the model's "invented"
@@ -198,7 +198,7 @@ Typed relation F1 is strict (Section 4). Test precision 0.818, recall 0.751 for 
 | end to end (generator entities) | 0.781 | 0.783 |
 | relation step with gold entities | 0.839 | 0.822 |
 
-On a fresh test set, scored once, the system before the last two steps scored 0.751.
+On a fresh test set (13 documents, one labelling pass) the system before the last two steps scored 0.751. Effective sample sizes are documents, not chunks: 29 test, 30 validation and 13 fresh-test documents; a bootstrap over test documents gives about 0.72 to 0.84 for the 0.783.
 
 Contribution of each step:
 
