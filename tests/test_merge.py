@@ -233,3 +233,24 @@ def test_place_and_org_prefixes_do_not_force_join():
 def test_is_key_rejects_determiner_led_generic_and_function_words():
     assert not is_key("The Company") and not is_key("AND") and not is_key("The")
     assert is_key("Amundsen") and is_key("Tor Amundsen") and is_key("IBM")
+
+
+def test_carry_forward_description_joins_the_earlier_name_with_its_head_noun():
+    a = cg(0, [ent("e1", "Org", "Keswick Mountain Rescue Team"), ent("e2", "Org", "Lowther Foundation")])
+    b = cg(1, [ent("e1", "Org", "The team", "The team"), ent("e2", "Org", "Ridgeway Outdoor")],
+           [ChunkRelation("DONATED_TO", "e2", "e1")])
+    g = merge([a, b], "")
+    team = next(e for e in g.entities if e.name == "Keswick Mountain Rescue Team")
+    assert len(g.entities) == 3 and [(r.source, r.target) for r in g.relations] == [
+        (next(e.id for e in g.entities if e.name == "Ridgeway Outdoor"), team.id)]
+
+
+def test_carry_forward_stays_apart_when_two_names_share_the_head_noun():
+    a = cg(0, [ent("e1", "Org", "Keswick Rescue Team"), ent("e2", "Org", "Borrowdale Rescue Team")])
+    b = cg(1, [ent("e1", "Org", "The team", "the team")])
+    assert len(merge([a, b], "").entities) == 3
+
+
+def test_carry_forward_never_joins_within_one_chunk():
+    a = cg(0, [ent("e1", "Org", "Keswick Rescue Team"), ent("e2", "Org", "The team", "the team")])
+    assert len(merge([a], "").entities) == 2

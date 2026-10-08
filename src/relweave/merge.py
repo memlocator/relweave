@@ -7,7 +7,11 @@ apart on purpose, except for a surname-only entity beside its full name):
   (b) same type and the same normalised name or name-like mention (last word capitalised, not a role such as CEO);
       a one-word key (a surname) joins the unique full name containing it, and is skipped when several do;
   (c) an entity whose mentions are all generic descriptions joins the one entity of its type, in a chunk next to
-      its own, that uses the same description; computed from a snapshot after (b); pure pronouns never join.
+      its own, that uses the same description; computed from a snapshot after (b); pure pronouns never join;
+  (d) carry-forward: a description entity still alone after (c) ("the team" in a later chunk) joins the named entity
+      of its type, in its own or an earlier chunk, whose name contains the description's head noun ("Keswick Mountain
+      Rescue Team"); the nearest chunk with such a candidate decides, only a unique candidate there joins, and never
+      one in the description's own chunk.
 """
 
 from __future__ import annotations
@@ -32,12 +36,18 @@ ROLE_WORDS = {"ceo", "cfo", "coo", "cto", "chairman", "chairwoman", "chair", "pr
 FUNCTION_WORDS = {"and", "or", "of", "for", "in", "on", "at", "to", "by", "with", "from", "but", "not", "if", "as", "is",
                   "was", "are", "be", "the"}
 SURNAME_TYPES = {"Person"}  # types whose one-word names are surnames
+CARRY_FORWARD = True  # rule (d); switchable for evaluation
 DETERMINERS = {"the", "a", "an", "this", "that", "these", "those", "its", "his", "her", "their", "our", "my", "your"}
 GENERIC_NOUNS = {"company", "group", "unit", "area", "firm", "organisation", "organization", "corporation", "business",
                  "brand", "division", "subsidiary", "parent", "enterprise", "agency", "institution", "venture",
                  "city", "town", "country", "region", "state", "district", "site", "facility", "location", "place",
                  "man", "woman", "person", "executive", "founder", "owner", "event", "meeting", "deal", "project",
-                 "team", "club", "party", "bank", "operator", "manufacturer", "supplier", "customer", "partner"}
+                 "team", "club", "party", "bank", "operator", "manufacturer", "supplier", "customer", "partner",
+                 "charity", "foundation", "trust", "fund", "authority", "regulator", "commission", "ministry", "council",
+                 "university", "institute", "college", "school", "hospital", "hospice", "museum", "festival", "gala",
+                 "fair", "regatta", "race", "tournament", "league", "conference", "summit", "programme", "program",
+                 "lab", "laboratory", "centre", "center", "society", "association", "federation", "union", "committee",
+                 "network", "airline", "insurer", "lender", "investor", "buyer", "seller", "mill", "plant", "studio"}
 
 
 def _tokens(s: str) -> list[str]:
@@ -191,6 +201,41 @@ def _resolve(graphs: list[ChunkGraph], log: list | None = None) -> _Forest:
             joins.append((mine, cands.pop()))
     for a, b in joins:
         union(a, b)
+    if not CARRY_FORWARD:
+        return forest
+    rule = "d"
+    # (d) carry-forward by head noun: a description still alone joins the unique named entity of its type in the
+    # nearest earlier (or its own) chunk whose name contains the description's last word
+    snap = {n: forest.find(n) for n in ents}
+    members: dict = {}
+    for node in ents:
+        members.setdefault(snap[node], []).append(node)
+    named = {}  # component -> (type, set of casefolded name words, chunks)
+    for comp, nodes in members.items():
+        keys = [m.text for n in nodes for m in ents[n].mentions if is_key(m.text)]
+        if keys:
+            named[comp] = (ents[nodes[0]].type, {t.casefold() for k in keys for t in _tokens(k)},
+                           {n[0] for n in nodes})
+    joins = []
+    for comp, nodes in members.items():
+        if comp in named or len(nodes) != 1:
+            continue
+        e = ents[nodes[0]]
+        if not e.mentions or not all(is_generic(m.text) for m in e.mentions):
+            continue
+        heads = {description(m.text).split()[-1] for m in e.mentions if not is_pronoun(m.text) and description(m.text)}
+        if not heads:
+            continue
+        own = nodes[0][0]
+        cands = [c for c, (ty, words, chunks) in named.items() if ty == e.type and heads & words and min(chunks) <= own]
+        for k in range(own, -1, -1):  # the nearest chunk with a candidate decides
+            here = [c for c in cands if k in named[c][2]]
+            if here:
+                if len(here) == 1:
+                    joins.append((comp, here[0]))
+                break
+    for a, b in joins:
+        union(a, b)  # refused within one chunk: there the generator wrote them apart on purpose
     return forest
 
 
@@ -210,7 +255,7 @@ def _groups(graphs: list[ChunkGraph]):
 
 
 def union_log(graphs: list[ChunkGraph]) -> list[tuple[str, tuple, tuple]]:
-    """Every join entity resolution makes, as (rule "a"/"b"/"c", (chunk, id), (chunk, id)); for evaluation."""
+    """Every join entity resolution makes, as (rule "a"/"b"/"c"/"d", (chunk, id), (chunk, id)); for evaluation."""
     log: list = []
     _resolve(sorted(graphs, key=lambda g: g.chunk), log)
     return log
