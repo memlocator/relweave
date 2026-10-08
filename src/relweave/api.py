@@ -36,7 +36,7 @@ class Extractor:
 
     sequential: True loads one model at a time (generate every chunk, unload the generator, then score with the pair
     head and unload it); False keeps both resident across calls (about 2 x 2.7 GB); None (default) keeps both
-    resident when at least 7 GB of GPU memory is free at start and goes sequential otherwise.
+    resident when at least 7 GB (zero-shot: 8.5 GB) of GPU memory is free at start and goes sequential otherwise.
 
     A model that cannot be loaded, or a generator that fails on every chunk, raises RuntimeError. A single chunk that
     fails (unparseable output, CUDA OOM at batch 1) becomes a warning in Graph.warnings and the document continues;
@@ -76,7 +76,8 @@ class Extractor:
             self.schema = self._ce.schema
         if sequential is None:
             import torch
-            sequential = torch.cuda.mem_get_info()[0] < 7000 * 2**20
+            # both parts resident: generator + head about 2 x 2.7 GB; generator + zero-shot adapter about 3.6 + 3.4 GB
+            sequential = torch.cuda.mem_get_info()[0] < (8500 if zeroshot else 7000) * 2**20
         self.sequential = sequential
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
