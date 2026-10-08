@@ -80,20 +80,25 @@ class PledgedTo(Relation[Person | Org, Org]):
     """The source has promised a future gift to the target organisation that has not been given yet."""
 
 CHARITY = Schema(name="charity", entities=[Person, Org], relations=[DonatedTo, PledgedTo])
-ex = Extractor(schema=CHARITY, zeroshot=True, threshold=0.8)
-graph = ex.run(open("annual_report.txt").read())   # relations carry score = p(yes), origin "zeroshot"
+ex = Extractor(schema=CHARITY, zeroshot=True)       # density-calibrated threshold by default
+graph = ex.run(open("annual_report.txt").read())   # relations carry the adjusted score, origin "zeroshot"
 ```
 
-Command line: `relweave run report.txt --schema charity.py:CHARITY --zeroshot --threshold 0.8 --out graph.json`.
+Command line: `relweave run report.txt --schema charity.py:CHARITY --zeroshot --out graph.json`.
 
 The generator finds the entities (as for the fixed model); for every pair of them and every type of your schema whose
 endpoint types fit, the adapter answers the question and relations scoring above the threshold are kept. A symmetric
 type (`symmetric = True` on the class) is asked once per pair.
 
-**Threshold.** The best value depends on the text: about 0.7 on short passages with few entities, about 0.9 on dense
-text (each extra pair is another chance for a false yes). With a few labelled chunks, pick it per type:
-`relweave.zeroshot.calibrate([(type, score, is_true), ...])` returns `{type: threshold, "*": pooled}`, which
-`Extractor(threshold=...)` accepts. `evaluate.py` in the model repository scores labelled passages and reports F1
+**Threshold.** The best raw threshold depends on the text: about 0.7 on short passages with few entities, about 0.9
+on dense text, because each extra pair is another chance for a false yes. relweave therefore calibrates by default:
+each score is adjusted for the number of questions in its chunk (logit(p) - 0.5 ln(n / 50)) and compared with one
+threshold (0.6; constants in `relweave.zeroshot`). Fitted on the synthetic benchmark, this matched the best per-set
+threshold on both short and dense passages (0.830 vs 0.829, 0.746 vs 0.744) and gave 0.483 on held-out Re-DocRED
+against 0.512 for its best fixed threshold and 0.474 for a raw 0.8: it removes the density effect, not differences
+between text types. With a few labelled chunks of your own text, pick thresholds per type on the adjusted scores the
+graph holds: `relweave.zeroshot.calibrate([(type, score, is_true), ...])` returns `{type: threshold, "*": pooled}`,
+which `Extractor(threshold=...)` accepts. `evaluate.py` in the model repository scores labelled passages and reports F1
 tuned and untuned.
 
 ## 3. Training data

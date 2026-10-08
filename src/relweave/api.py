@@ -30,8 +30,9 @@ class Extractor:
     the generator's: Person, Org, Place, Object, Event, Coordinate for the published models); the generator finds
     the entities, and every relation type of your schema is scored on every fitting entity pair by the zero-shot
     adapter (zeroshot_weights, default chrullis/relweave-4b-zeroshot) instead of the trained head. threshold: one
-    number or {type: number} (default relweave.zeroshot.DEFAULT_THRESHOLD), see relweave.zeroshot.calibrate; the best value depends on the text (about 0.7 on short
-    passages, about 0.9 on dense ones). Relations carry the score p(yes) and origin "zeroshot".
+    number or {type: number} on density-adjusted scores (default relweave.zeroshot.DEFAULT_THRESHOLD; scores are
+    adjusted for the number of questions per chunk, see relweave.zeroshot), or per type from relweave.zeroshot.calibrate
+    with a few labelled examples. Relations carry the adjusted score and origin "zeroshot".
 
     batch_size: chunks generated together (from all documents of a run_many/iter_run call, sorted by length);
     "auto" picks the largest of 1/2/4/8 that fits the free GPU memory after the generator has loaded, and any batch
@@ -149,7 +150,7 @@ class Extractor:
         """The generator's entities, relations scored by the zero-shot adapter for the user's schema."""
         from relweave.extract import to_chunk_graph
         from relweave.records import ChunkRelation
-        from relweave.zeroshot import threshold_for
+        from relweave.zeroshot import adjust, threshold_for
         g = to_chunk_graph(c, r.output.model_copy(update={"relations": []}), set(), {})
         by_id = {e.id: e for e in r.output.entities}
         ents = [(e.name, e.type, list(dict.fromkeys([e.name] + list(by_id[e.id].mentions)))) for e in g.entities]
@@ -159,8 +160,9 @@ class Extractor:
             g.warnings.append(f"chunk {c.index}: zero-shot scoring failed ({_why(e)}); no relations")
             return g
         for edge, i, j, p in scored:
-            if p > threshold_for(self.threshold, edge):
-                g.relations.append(ChunkRelation(edge, g.entities[i].id, g.entities[j].id, "asserted", {}, round(p, 3),
+            q = adjust(p, len(scored))  # density calibration: more questions in the chunk, stricter
+            if q > threshold_for(self.threshold, edge):
+                g.relations.append(ChunkRelation(edge, g.entities[i].id, g.entities[j].id, "asserted", {}, round(q, 3),
                                                  "zeroshot"))
         return g
 

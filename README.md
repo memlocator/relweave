@@ -148,14 +148,13 @@ adapter reads the type's definition (the class docstring) and scores it.
 class DonatedTo(Relation[Person | Org, Org]):
     """The source has given money, goods or other gifts to the target organisation."""
 
-ex = Extractor(schema=Schema(name="charity", entities=[Person, Org], relations=[DonatedTo]), zeroshot=True,
-               threshold=0.8)
+ex = Extractor(schema=Schema(name="charity", entities=[Person, Org], relations=[DonatedTo]), zeroshot=True)
 ```
 
 On 12 relation types it never saw, it scores 0.82 F1 on short synthetic passages and 0.74 on dense ones with a
-threshold calibrated on labelled passages, and 0.56 on 15 unseen Re-DocRED types. The best threshold depends on the
-text (about 0.7 for short passages, about 0.9 for dense ones); calibrate it on a few labelled chunks with
-`relweave.zeroshot.calibrate`. Details, numbers and limits: `docs/zero-shot.md`.
+threshold calibrated on labelled passages, and 0.56 on 15 unseen Re-DocRED types. Scores are calibrated for entity density by default
+(the more pairs a chunk has, the stricter); with a few labelled chunks, `relweave.zeroshot.calibrate` sets thresholds
+per type for your text. Details, numbers and limits: `docs/zero-shot.md`.
 
 ## How it decides relations
 

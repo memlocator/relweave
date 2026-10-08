@@ -5,7 +5,7 @@ import pytest
 
 from relweave.schema import Relation, Schema
 from relweave.schema.business import Org, Person
-from relweave.zeroshot import calibrate, candidates, pack, threshold_for
+from relweave.zeroshot import DENSITY_REF, adjust, calibrate, candidates, pack, threshold_for
 
 
 class DonatedTo(Relation[Person | Org, Org]):
@@ -59,7 +59,13 @@ def test_zeroshot_relations_above_threshold_enter_the_graph():
     e._zs, e.threshold, e.schema = FakeZS(), {"DONATED_TO": 0.8}, CHARITY
     chunk = types.SimpleNamespace(index=0, text=text, start=0, end=len(text))
     g = e._zeroshot_graph(chunk, types.SimpleNamespace(output=out))
-    assert [(r.type, r.source, r.target, r.score, r.origin) for r in g.relations] == [("DONATED_TO", "e1", "e2", 0.92, "zeroshot")]
+    assert [(r.type, r.source, r.target, r.origin) for r in g.relations] == [("DONATED_TO", "e1", "e2", "zeroshot")]
+    assert g.relations[0].score == round(adjust(0.92, 2), 3)
+
+
+def test_density_adjustment_is_stricter_the_more_questions_a_chunk_asks():
+    assert adjust(0.8, DENSITY_REF) == pytest.approx(0.8)
+    assert adjust(0.8, 10 * DENSITY_REF) < 0.8 < adjust(0.8, DENSITY_REF // 10)
 
 
 def test_zeroshot_refuses_entity_types_the_generator_cannot_find(monkeypatch):
