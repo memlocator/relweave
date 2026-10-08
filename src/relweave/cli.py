@@ -50,13 +50,19 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         max_words: int = typer.Option(200, help="words per chunk"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
         generator_url: str | None = typer.Option(None, help="generate on this HTTP server (vLLM serving the merged "
-                                                 "generator, e.g. http://localhost:8000); the head runs locally")) -> None:
+                                                 "generator, e.g. http://localhost:8000); the head runs locally"),
+        zeroshot: bool = typer.Option(False, help="score the relation types of --schema with the zero-shot adapter "
+                                      "(types defined at run time; entities still come from the generator)"),
+        threshold: float = typer.Option(0.5, help="zero-shot: keep relations scoring above this (about 0.7 for short "
+                                        "passages, 0.9 for dense text)"),
+        zeroshot_weights: str | None = typer.Option(None, help="zero-shot adapter (default chrullis/relweave-4b-zeroshot)")) -> None:
     """Extract a graph from each file; all files go through one Extractor, so each model loads once."""
     import relweave
     try:
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
                                 margin=margin, batch_size=_batch(batch_size), max_words=max_words, reserve_mb=reserve_mb,
-                                generator_url=generator_url)
+                                generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
+                                zeroshot_weights=zeroshot_weights)
         many = len(files) > 1
         if many:
             out.mkdir(parents=True, exist_ok=True)

@@ -136,6 +136,26 @@ Prompts, decoding grammars, validation and scoring are derived from the classes.
 trained on: for your own schema, label data and train both parts as described in `docs/recipe-own-schema.md`, then
 run with `--schema path/to/module.py:SHIPPING --weights <your directory>`.
 
+## Your own relation types without training (experimental)
+
+With `zeroshot=True`, relweave scores relation types you define at run time with
+[relweave-4b-zeroshot](https://huggingface.co/chrullis/relweave-4b-zeroshot): the generator still finds the entities
+(Person, Org, Place, Object, Event, Coordinate), and for every entity pair and each of your relation types a yes/no
+adapter reads the type's definition (the class docstring) and scores it.
+
+```python
+class DonatedTo(Relation[Person | Org, Org]):
+    """The source has given money, goods or other gifts to the target organisation."""
+
+ex = Extractor(schema=Schema(name="charity", entities=[Person, Org], relations=[DonatedTo]), zeroshot=True,
+               threshold=0.8)
+```
+
+On 12 relation types it never saw, it scores 0.82 F1 on short synthetic passages and 0.74 on dense ones with a
+threshold calibrated on labelled passages, and 0.56 on 15 unseen Re-DocRED types. The best threshold depends on the
+text (about 0.7 for short passages, about 0.9 for dense ones); calibrate it on a few labelled chunks with
+`relweave.zeroshot.calibrate`. Details, numbers and limits: `docs/zero-shot.md`.
+
 ## How it decides relations
 
 - **Generator.** Qwen3-4B with a LoRA adapter writes entity lines and relation lines under a grammar derived from the

@@ -23,6 +23,13 @@ class Extractor:
     "http://localhost:8000" for `vllm serve chrullis/relweave-4b-base` (the merged generator at the repository root);
     the pair head still runs locally.
 
+    zeroshot: relation types defined at run time. `schema` then is your own Schema (its entity types must be among
+    the generator's: Person, Org, Place, Object, Event, Coordinate for the published models); the generator finds
+    the entities, and every relation type of your schema is scored on every fitting entity pair by the zero-shot
+    adapter (zeroshot_weights, default chrullis/relweave-4b-zeroshot) instead of the trained head. threshold: one
+    number or {type: number}, see relweave.zeroshot.calibrate; the best value depends on the text (about 0.7 on short
+    passages, about 0.9 on dense ones). Relations carry the score p(yes) and origin "zeroshot".
+
     batch_size: chunks generated together (from all documents of a run_many/iter_run call, sorted by length);
     "auto" picks the largest of 1/2/4/8 that fits the free GPU memory after the generator has loaded, and any batch
     that runs out of memory is retried at half the size.
@@ -35,19 +42,38 @@ class Extractor:
     fails (unparseable output, CUDA OOM at batch 1) becomes a warning in Graph.warnings and the document continues;
     a chunk the head could not score keeps the generator's relations unfiltered."""
 
+    _zs = None  # the zero-shot adapter (zeroshot=True)
+
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
                  max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
-                 generator_url: str | None = None):
+                 generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
+                 threshold: float | dict = 0.5):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
-        self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
-                                     generator_url=generator_url)
-        self.schema = self._ce.schema
+        self._zs = None
+        if zeroshot:
+            from relweave.schema import load_schema
+            from relweave.zeroshot import DEFAULT_WEIGHTS, ZeroShot
+            if schema is None:
+                raise ValueError("zeroshot needs your own schema (relation types with definitions)")
+            user = load_schema(schema)
+            self._ce = ex.ChunkExtractor(generator, None, model, None, device, reserve_mb, group,
+                                         generator_url=generator_url)  # entities only, in the generator's own schema
+            known = set(self._ce.schema.node_names())
+            unknown = sorted(set(user.node_names()) - known)
+            if unknown:
+                raise ValueError(f"entity types {unknown} are not found by the generator (it knows {sorted(known)}); "
+                                 "zero-shot covers relation types only")
+            self._zs, self.threshold, self.schema = ZeroShot(zeroshot_weights or DEFAULT_WEIGHTS), threshold, user
+        else:
+            self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
+                                         generator_url=generator_url)
+            self.schema = self._ce.schema
         if sequential is None:
             import torch
             sequential = torch.cuda.mem_get_info()[0] < 7000 * 2**20
@@ -55,6 +81,8 @@ class Extractor:
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
                            "cut": self._ce.cut, "margin": self._ce.margin}
+        if self._zs is not None:
+            self.model_info.update(head=None, cut=None, margin=None, zeroshot=str(self._zs.dir), threshold=threshold)
 
     def run(self, text: str, doc_id: str = "document") -> Graph:
         """One document. In sequential mode this loads and unloads both models on every call; for several
@@ -83,7 +111,8 @@ class Extractor:
             if self.sequential:
                 ce.unload_generator()
             if any(not isinstance(r, Exception) and r.output is not None for r in generated.values()):
-                _load(ce.load_head, "pair head")
+                _load(self._zs.load if self._zs is not None else ce.load_head,
+                      "zero-shot adapter" if self._zs is not None else "pair head")
             for d, chunks in enumerate(chunked):
                 graphs = [self._chunk_graph(c, generated[f"{d}:{c.index}"]) for c in chunks]
                 yield d, merge(graphs, texts[d], self.schema, doc_ids[d], self.model_info, version("relweave"))
@@ -91,6 +120,8 @@ class Extractor:
             if self.sequential:
                 ce.unload_generator()
                 ce.unload_head()
+                if self._zs is not None:
+                    self._zs.unload()
 
     def _chunk_graph(self, c, r) -> ChunkGraph:
         from relweave.extract import to_chunk_graph
@@ -99,12 +130,34 @@ class Extractor:
         if r.output is None:
             return ChunkGraph(c.index, warnings=[f"chunk {c.index}: unparseable generator output ({r.error})"],
                               start=c.start, end=c.end)
+        if self._zs is not None:
+            return self._zeroshot_graph(c, r)
         try:
             return self._ce.combine(c, r, self._ce.pair_scores(c, r))
         except Exception as e:  # noqa: BLE001  one bad chunk must not lose the document
             g = to_chunk_graph(c, r.output, {(x.type, x.source, x.target) for x in r.output.relations}, {})
             g.warnings.append(f"chunk {c.index}: head scoring failed ({_why(e)}); generator relations kept unfiltered")
             return g
+
+
+    def _zeroshot_graph(self, c, r) -> ChunkGraph:
+        """The generator's entities, relations scored by the zero-shot adapter for the user's schema."""
+        from relweave.extract import to_chunk_graph
+        from relweave.records import ChunkRelation
+        from relweave.zeroshot import threshold_for
+        g = to_chunk_graph(c, r.output.model_copy(update={"relations": []}), set(), {})
+        by_id = {e.id: e for e in r.output.entities}
+        ents = [(e.name, e.type, list(dict.fromkeys([e.name] + list(by_id[e.id].mentions)))) for e in g.entities]
+        try:
+            scored = self._zs.score_chunk(c.text, ents, self.schema)
+        except Exception as e:  # noqa: BLE001  one bad chunk must not lose the document
+            g.warnings.append(f"chunk {c.index}: zero-shot scoring failed ({_why(e)}); no relations")
+            return g
+        for edge, i, j, p in scored:
+            if p > threshold_for(self.threshold, edge):
+                g.relations.append(ChunkRelation(edge, g.entities[i].id, g.entities[j].id, "asserted", {}, round(p, 3),
+                                                 "zeroshot"))
+        return g
 
 
 def _load(load, what: str) -> None:
