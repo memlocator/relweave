@@ -12,6 +12,9 @@ from relweave.merge import merge
 from relweave.records import ChunkGraph
 
 
+RESIDENT_MB = 9000  # free GPU memory needed to keep the generator and the head (or zero-shot adapter) loaded together
+
+
 class Extractor:
     """Wraps the model.
 
@@ -35,8 +38,8 @@ class Extractor:
     that runs out of memory is retried at half the size.
 
     sequential: True loads one model at a time (generate every chunk, unload the generator, then score with the pair
-    head and unload it); False keeps both resident across calls (about 2 x 2.7 GB); None (default) keeps both
-    resident when at least 7 GB (zero-shot: 8.5 GB) of GPU memory is free at start and goes sequential otherwise.
+    head and unload it); False keeps both resident across calls (about 2 x 3.6 GB); None (default) keeps both
+    resident when at least RESIDENT_MB (9 GB) of GPU memory is free at start and goes sequential otherwise.
 
     A model that cannot be loaded, or a generator that fails on every chunk, raises RuntimeError. A single chunk that
     fails (unparseable output, CUDA OOM at batch 1) becomes a warning in Graph.warnings and the document continues;
@@ -77,8 +80,8 @@ class Extractor:
             self.schema = self._ce.schema
         if sequential is None:
             import torch
-            # both parts resident: generator + head about 2 x 2.7 GB; generator + zero-shot adapter about 3.6 + 3.4 GB
-            sequential = torch.cuda.mem_get_info()[0] < (8500 if zeroshot else 7000) * 2**20
+            # both parts resident: generator about 3.6 GB plus head or zero-shot adapter about 3.4 GB, plus activations
+            sequential = torch.cuda.mem_get_info()[0] < RESIDENT_MB * 2**20
         self.sequential = sequential
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
@@ -171,13 +174,13 @@ def _load(load, what: str) -> None:
 
 
 def _memory_note() -> str:
-    """'; N MB of M MB GPU memory free (the 4-bit model needs about 2.7 GB per part plus generation memory)'."""
+    """'; N MB of M MB GPU memory free (the 4-bit model needs about 3.6 GB per part plus generation memory)'."""
     try:
         import torch
         free, total = torch.cuda.mem_get_info()
     except Exception:  # noqa: BLE001  no CUDA: nothing to add
         return ""
-    return (f"; {free // 2**20} MB of {total // 2**20} MB GPU memory free (each model part needs about 2700 MB "
+    return (f"; {free // 2**20} MB of {total // 2**20} MB GPU memory free (each model part needs about 3600 MB "
             "plus memory to generate)")
 
 

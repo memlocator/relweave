@@ -15,7 +15,8 @@ pip install git+https://github.com/memlocator/relweave            # running the 
 pip install "relweave[train] @ git+https://github.com/memlocator/relweave"   # also training
 ```
 
-A PyPI release will follow. relweave needs Python 3.12 and a CUDA GPU with about 6 GB free (the base model is 4-bit).
+A PyPI release will follow. relweave needs Python 3.12 and a CUDA GPU with about 5 GB free (the base model is 4-bit; the generator and the head
+each take about 3.6 GB and are loaded one after the other below 9 GB free).
 On first use it downloads the model `chrullis/relweave-4b-base` and the base model
 `unsloth/qwen3-4b-unsloth-bnb-4bit` from the Hugging Face Hub.
 

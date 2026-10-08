@@ -22,7 +22,7 @@ command has `--help`.
 |---|---|
 | GPU, generator training | One GPU with 8 GB or more. QLoRA training of the 4B generator peaked at 4.84 GB (the business run: 4-bit base, LoRA rank 32). |
 | GPU, head training | More than the generator. The head runs one forward pass per chunk with up to `--max-probes` packed probes. On a 24 GB L4 the business head used 200 probes. An 8 GB card fits only about 80 probes, which measurably hurt the business head. |
-| GPU, inference | 4-bit 4B base. About 2.7 GB per loaded model (generator and head). |
+| GPU, inference | 4-bit 4B base. About 3.6 GB per loaded model (generator and head), loaded one at a time below 9 GB free. |
 | time | Generator: the business run trained 10,765 examples for one epoch in 1.33 hours. A few hundred chunks for 2 to 3 epochs is minutes to an hour on a comparable GPU (an estimate from that rate, not a measurement). Head: not measured for a new schema; it runs one forward pass with up to 200 probes per example, so expect it to be slower per chunk than the generator. |
 | labelled data, starting point | A few hundred labelled chunks (about 1,200 characters each) from at least 10 to 20 documents, plus a validation set and a test set of 50 to 100 chunks each. |
 | labelled data, what helps | More chunks and more documents. The business model used about 2,900 labelled chunks plus 500 list-rich chunks, expanded to 10,765 training examples with sentence windows. The last 500 chunks added +0.003 validation F1, which is not significant: the curve had flattened there. No learning curve exists for a new schema. |
