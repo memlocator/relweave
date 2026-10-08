@@ -8,7 +8,7 @@ apart on purpose, except for a surname-only entity beside its full name):
       a one-word key (a surname) joins the unique full name containing it, and is skipped when several do;
   (c) an entity whose mentions are all generic descriptions joins the one entity of its type, in a chunk next to
       its own, that uses the same description; computed from a snapshot after (b); pure pronouns never join;
-  (d) carry-forward: a description entity still alone after (c) ("the team" in a later chunk) joins the named entity
+  (d) description-name link: a description entity still alone after (c) ("the team" in a later chunk) joins the named entity
       of its type, in its own or an earlier chunk, whose name contains the description's head noun ("Keswick Mountain
       Rescue Team"); the nearest chunk with such a candidate decides, only a unique candidate there joins, and never
       one in the description's own chunk.
@@ -36,7 +36,8 @@ ROLE_WORDS = {"ceo", "cfo", "coo", "cto", "chairman", "chairwoman", "chair", "pr
 FUNCTION_WORDS = {"and", "or", "of", "for", "in", "on", "at", "to", "by", "with", "from", "but", "not", "if", "as", "is",
                   "was", "are", "be", "the"}
 SURNAME_TYPES = {"Person"}  # types whose one-word names are surnames
-CARRY_FORWARD = True  # rule (d); switchable for evaluation
+CARRY_FORWARD = True  # rule (d), the description-name link; switchable for evaluation
+CARRY_SAME_CHUNK = False  # rule (d) also within the description's own chunk (evaluation switch)
 DETERMINERS = {"the", "a", "an", "this", "that", "these", "those", "its", "his", "her", "their", "our", "my", "your"}
 GENERIC_NOUNS = {"company", "group", "unit", "area", "firm", "organisation", "organization", "corporation", "business",
                  "brand", "division", "subsidiary", "parent", "enterprise", "agency", "institution", "venture",
@@ -204,7 +205,7 @@ def _resolve(graphs: list[ChunkGraph], log: list | None = None) -> _Forest:
     if not CARRY_FORWARD:
         return forest
     rule = "d"
-    # (d) carry-forward by head noun: a description still alone joins the unique named entity of its type in the
+    # (d) description-name link by head noun (a rule, not the model-based carry-forward of known entities): a description still alone joins the unique named entity of its type in the
     # nearest earlier (or its own) chunk whose name contains the description's last word
     snap = {n: forest.find(n) for n in ents}
     members: dict = {}
@@ -235,7 +236,7 @@ def _resolve(graphs: list[ChunkGraph], log: list | None = None) -> _Forest:
                     joins.append((comp, here[0]))
                 break
     for a, b in joins:
-        union(a, b)  # refused within one chunk: there the generator wrote them apart on purpose
+        union(a, b, force=CARRY_SAME_CHUNK)
     return forest
 
 
