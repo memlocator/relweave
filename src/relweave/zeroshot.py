@@ -8,9 +8,10 @@ questions of a chunk share forward passes (packed; each question attends to the 
 
 Density calibration (default): the more questions a chunk asks, the more chances for a false yes, so the best raw
 threshold rises with entity density (about 0.7 on short passages, about 0.9 on dense text). Each score is therefore
-adjusted for the number of questions n in its chunk, logit(p) - DENSITY_ALPHA * ln(n / DENSITY_REF), and compared with
-one threshold. Fitted on the synthetic benchmark (short and dense) it matched the best per-set threshold on both
-(0.830 vs 0.829, 0.746 vs 0.744) and gave 0.483 on held-out Re-DocRED (best fixed 0.512, raw 0.8 0.474). Thresholds:
+adjusted for the number n of entity pairs its type is asked on in the chunk, logit(p) - DENSITY_ALPHA * ln(n /
+DENSITY_REF), and compared with one threshold. Counting per type keeps a type's scores independent of how many other
+types the schema has. Fitted on the synthetic benchmark (short and dense) it gave 0.839 and 0.734 (best fixed threshold
+per set 0.829 and 0.744) and 0.467 on held-out Re-DocRED (best fixed 0.512, raw 0.8 0.474). Thresholds:
 one number for all types, or {type: threshold}, on adjusted scores; `calibrate` picks one per type from a few labelled
 examples (scores taken from the graph, which holds the adjusted values).
 Entities still come from the trained generator, so the schema's entity types must be among the generator's.
@@ -23,7 +24,7 @@ from pathlib import Path
 DEFAULT_WEIGHTS = "chrullis/relweave-4b-zeroshot"
 DEFAULT_THRESHOLD = 0.6  # on density-adjusted scores
 DENSITY_ALPHA = 0.5
-DENSITY_REF = 50  # questions per chunk at which the adjustment is zero
+DENSITY_REF = 5  # pairs a type is asked on per chunk at which the adjustment is zero
 INSTRUCTION = ("For each question below, answer yes if the text states or clearly implies that the relation holds "
                "from the source to the target, otherwise no.")
 GRID = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99)
@@ -75,7 +76,8 @@ def candidates(schema, entities: list[tuple[str, str]]) -> list[tuple[str, int, 
 
 
 def adjust(p: float, n_questions: int, alpha: float = DENSITY_ALPHA, ref: float = DENSITY_REF) -> float:
-    """p(yes) adjusted for the number of questions asked in its chunk: logit(p) - alpha * ln(n / ref), as a probability."""
+    """p(yes) adjusted for the number of questions its relation type was asked in the chunk (one per fitting entity
+    pair): logit(p) - alpha * ln(n / ref), as a probability."""
     import math
     p = min(max(p, 1e-6), 1 - 1e-6)
     x = math.log(p / (1 - p)) - alpha * math.log(max(n_questions, 1) / ref)
@@ -159,7 +161,7 @@ class ZeroShot:
 
     def score_chunk(self, text: str, entities: list[tuple[str, str, list[str]]], schema) -> list[tuple[str, int, int, float]]:
         """entities: (name, type, mentions). Every fitting (type, i, j) with its raw p(yes); adjust() it with the
-        number of returned questions before thresholding."""
+        number of questions of its type before thresholding."""
         cands = candidates(schema, [(n, t) for n, t, _ in entities])
         if not cands:
             return []

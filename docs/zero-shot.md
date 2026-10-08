@@ -92,11 +92,11 @@ type (`symmetric = True` on the class) is asked once per pair.
 
 **Threshold.** The best raw threshold depends on the text: about 0.7 on short passages with few entities, about 0.9
 on dense text, because each extra pair is another chance for a false yes. relweave therefore calibrates by default:
-each score is adjusted for the number of questions in its chunk (logit(p) - 0.5 ln(n / 50)) and compared with one
-threshold (0.6; constants in `relweave.zeroshot`). Fitted on the synthetic benchmark, this matched the best per-set
-threshold on both short and dense passages (0.830 vs 0.829, 0.746 vs 0.744) and gave 0.483 on held-out Re-DocRED
-against 0.512 for its best fixed threshold and 0.474 for a raw 0.8: it removes the density effect, not differences
-between text types. With a few labelled chunks of your own text, pick thresholds per type on the adjusted scores the
+each score is adjusted for the number n of entity pairs its type is asked on in the chunk (logit(p) - 0.5 ln(n / 5))
+and compared with one threshold (0.6; constants in `relweave.zeroshot`); counting per type keeps a type's scores
+independent of how many other types the schema has. Fitted on the synthetic benchmark, this gave 0.839 and 0.734 on
+short and dense passages (best fixed threshold per set 0.829 and 0.744) and 0.467 on held-out Re-DocRED (its best fixed
+threshold 0.512, a raw 0.8 0.474): it removes most of the density effect, not differences between text types. With a few labelled chunks of your own text, pick thresholds per type on the adjusted scores the
 graph holds: `relweave.zeroshot.calibrate([(type, score, is_true), ...])` returns `{type: threshold, "*": pooled}`,
 which `Extractor(threshold=...)` accepts. `evaluate.py` in the model repository scores labelled passages and reports F1
 tuned and untuned.

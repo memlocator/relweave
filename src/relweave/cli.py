@@ -56,7 +56,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         zeroshot: bool = typer.Option(False, help="score the relation types of --schema with the zero-shot adapter "
                                       "(types defined at run time; entities still come from the generator)"),
         threshold: float | None = typer.Option(None, help=f"zero-shot: keep relations whose density-adjusted score is above this (default {DEFAULT_THRESHOLD}; "
-                                        "scores are adjusted for the number of questions per chunk)"),
+                                        "scores are adjusted for the number of entity pairs per chunk)"),
         zeroshot_weights: str | None = typer.Option(None, help="zero-shot adapter (default chrullis/relweave-4b-zeroshot)")) -> None:
     """Extract a graph from each file; all files go through one Extractor, so each model loads once."""
     import relweave

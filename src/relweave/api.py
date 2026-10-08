@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
@@ -31,7 +32,7 @@ class Extractor:
     the entities, and every relation type of your schema is scored on every fitting entity pair by the zero-shot
     adapter (zeroshot_weights, default chrullis/relweave-4b-zeroshot) instead of the trained head. threshold: one
     number or {type: number} on density-adjusted scores (default relweave.zeroshot.DEFAULT_THRESHOLD; scores are
-    adjusted for the number of questions per chunk, see relweave.zeroshot), or per type from relweave.zeroshot.calibrate
+    adjusted for the number of entity pairs each type is asked on per chunk, see relweave.zeroshot), or per type from relweave.zeroshot.calibrate
     with a few labelled examples. Relations carry the adjusted score and origin "zeroshot".
 
     batch_size: chunks generated together (from all documents of a run_many/iter_run call, sorted by length);
@@ -159,8 +160,9 @@ class Extractor:
         except Exception as e:  # noqa: BLE001  one bad chunk must not lose the document
             g.warnings.append(f"chunk {c.index}: zero-shot scoring failed ({_why(e)}); no relations")
             return g
+        per_type = Counter(edge for edge, _, _, _ in scored)
         for edge, i, j, p in scored:
-            q = adjust(p, len(scored))  # density calibration: more questions in the chunk, stricter
+            q = adjust(p, per_type[edge])  # density calibration: the more pairs a type is asked on, the stricter
             if q > threshold_for(self.threshold, edge):
                 g.relations.append(ChunkRelation(edge, g.entities[i].id, g.entities[j].id, "asserted", {}, round(q, 3),
                                                  "zeroshot"))

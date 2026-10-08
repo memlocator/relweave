@@ -60,7 +60,7 @@ def test_zeroshot_relations_above_threshold_enter_the_graph():
     chunk = types.SimpleNamespace(index=0, text=text, start=0, end=len(text))
     g = e._zeroshot_graph(chunk, types.SimpleNamespace(output=out))
     assert [(r.type, r.source, r.target, r.origin) for r in g.relations] == [("DONATED_TO", "e1", "e2", "zeroshot")]
-    assert g.relations[0].score == round(adjust(0.92, 2), 3)
+    assert g.relations[0].score == round(adjust(0.92, 2), 3)  # DONATED_TO asked on 2 pairs
 
 
 def test_density_adjustment_is_stricter_the_more_questions_a_chunk_asks():
@@ -89,3 +89,24 @@ def test_zeroshot_refuses_entity_types_the_generator_cannot_find(monkeypatch):
     with pytest.raises(ValueError, match="Grant"):
         Extractor(schema=Schema(name="grants_test", entities=[Org, Grant], relations=[Awarded]), zeroshot=True,
                   sequential=True)
+
+
+def test_adding_relation_types_does_not_change_another_types_scores():
+    from relweave import Extractor
+    from relweave.schema import ExtractionOutput
+    text = "Ingrid gave Harbour Light money."
+    out = ExtractionOutput.model_construct(entities=[
+        types.SimpleNamespace(id="e1", type="Person", name="Ingrid", mentions=["Ingrid"], attributes={}),
+        types.SimpleNamespace(id="e2", type="Org", name="Harbour Light", mentions=["Harbour Light"], attributes={})],
+        relations=[])
+    chunk = types.SimpleNamespace(index=0, text=text, start=0, end=len(text))
+
+    def scores(extra):
+        class FakeZS:
+            def score_chunk(self, text, ents, schema):
+                return [("DONATED_TO", 0, 1, 0.9)] + [(f"OTHER_{k}", 0, 1, 0.1) for k in range(extra)]
+        e = Extractor.__new__(Extractor)
+        e._zs, e.threshold, e.schema = FakeZS(), 0.0, CHARITY
+        return [r.score for r in e._zeroshot_graph(chunk, types.SimpleNamespace(output=out)).relations if r.type == "DONATED_TO"]
+
+    assert scores(0) == scores(30)
