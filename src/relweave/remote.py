@@ -47,10 +47,11 @@ class RemoteExtractor:
         self.name = f"qwen_finetuned_{fmt}_remote"
         self.tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))  # the chat template the generator was trained with
 
-    def _one(self, item: tuple[str, str]) -> ExtractionResult:
-        cid, text = item
+    def _one(self, item: tuple) -> ExtractionResult:
+        cid, text, known = (*item, None)[:3]  # (key, text) or (key, text, known entity lines)
         prompt = generation_prompt(self.tokenizer, chat_messages(text, self.fmt, compact=self.compact,
-                                                                 schema=self.schema, conditioned=self.conditioned))
+                                                                 schema=self.schema, conditioned=self.conditioned,
+                                                                 known=known))
         t0 = time.perf_counter()
         body = {"model": self.model, "prompt": prompt, "max_tokens": self.max_new_tokens, "temperature": 0.0,
                 "structured_outputs": {"grammar": self.format.ebnf_for(self.format.grammar_key(text))}}

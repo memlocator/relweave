@@ -192,8 +192,9 @@ class QwenExtractor:
             self._grammars[key] = fmt.compile(self._compiler, chunk_text)
         return self._grammars[key]
 
-    def _messages(self, text: str) -> list[dict[str, str]]:
-        return chat_messages(text, self.fmt, compact=self.compact, schema=self.schema, conditioned=self.conditioned)
+    def _messages(self, text: str, known: str | None = None) -> list[dict[str, str]]:
+        return chat_messages(text, self.fmt, compact=self.compact, schema=self.schema, conditioned=self.conditioned,
+                             known=known)
 
     def extract(self, chunk_id: str, chunk_text: str) -> ExtractionResult:
         import torch
@@ -225,7 +226,9 @@ class QwenExtractor:
         """
         import torch
 
-        prompts = {cid: generation_prompt(self.tokenizer, self._messages(text))
+        known = {it[0]: (it[2] if len(it) > 2 else None) for it in items}  # carry-forward: (key, text, known)
+        items = [(it[0], it[1]) for it in items]
+        prompts = {cid: generation_prompt(self.tokenizer, self._messages(text, known[cid]))
                    for cid, text in items}
         order = sorted(items, key=lambda it: len(prompts[it[0]]))
         t_start = time.perf_counter()

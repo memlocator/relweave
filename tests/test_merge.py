@@ -254,3 +254,13 @@ def test_carry_forward_stays_apart_when_two_names_share_the_head_noun():
 def test_carry_forward_never_joins_within_one_chunk():
     a = cg(0, [ent("e1", "Org", "Keswick Rescue Team"), ent("e2", "Org", "The team", "the team")])
     assert len(merge([a], "").entities) == 2
+
+
+def test_carried_numbers_join_across_chunks_only_with_carry_forward():
+    a = cg(0, [ent("e1", "Org", "Halvorsen Brewing")])
+    b = cg(1, [ent("e1", "Org", "the business", "the business"), ent("e2", "Place", "Canada")],
+           [ChunkRelation("OPERATES_IN", "e1", "e2")])
+    joined = merge([a, b], "", carried=True)
+    assert len(joined.entities) == 2 and joined.relations[0].source == next(
+        e.id for e in joined.entities if e.name == "Halvorsen Brewing")
+    assert len(merge([a, b], "").entities) == 3

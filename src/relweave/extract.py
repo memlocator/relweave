@@ -217,6 +217,7 @@ supplies the prompt settings and tokenizer."""
         self.model, self.group = model or settings.get("base_model", DEFAULT_MODEL), group
         self.generator_url = generator_url
         self.compact, self.conditioned = settings.get("compact_prompt", False), settings.get("conditioned", False)
+        self.carry = settings.get("carry", False)  # trained to take earlier chunks' entities (carry-forward)
         self.max_new_tokens = max_new_tokens or settings.get("max_new_tokens", 2500)
         cap_memory(reserve_mb)
         self._gen = self._head = None
@@ -318,7 +319,7 @@ supplies the prompt settings and tokenizer."""
             else:
                 err = None
             if err is None:
-                out.update({key: r for (key, _), r in zip(batch, results)})
+                out.update({it[0]: r for it, r in zip(batch, results)})
                 k += len(batch)
             elif isinstance(err, torch.OutOfMemoryError) and b > 1:
                 err = None  # free after the except block: the traceback holds the failed pass
@@ -328,9 +329,10 @@ supplies the prompt settings and tokenizer."""
                 out[batch[0][0]] = err
                 k += 1
             else:  # another error in a batch: find the failing chunk by running them one at a time
-                for key, text in batch:
+                for it in batch:
+                    key = it[0]
                     try:
-                        out[key] = self._gen.extract_batch([(key, text)], batch_size=1)[0]
+                        out[key] = self._gen.extract_batch([it], batch_size=1)[0]
                     except Exception as e:  # noqa: BLE001
                         out[key] = e
                 k += len(batch)

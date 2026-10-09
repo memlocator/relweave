@@ -2,6 +2,8 @@
 
 Entity resolution, in order (union-find; two entities of one chunk are not joined, since the model wrote them
 apart on purpose, except for a surname-only entity beside its full name):
+  (0) carried: when the generator saw earlier chunks' entities (carry-forward), an entity number is the same entity
+      in every chunk of the document, so entities with the same id are joined first;
   (a) overlap anchor: entities of different chunks, same type, sharing a NAME mention at the same document offset
       (pronouns and descriptions never anchor);
   (b) same type and the same normalised name or name-like mention (last word capitalised, not a role such as CEO);
@@ -125,10 +127,10 @@ class _Forest:
         return True
 
 
-def _resolve(graphs: list[ChunkGraph], log: list | None = None) -> _Forest:
+def _resolve(graphs: list[ChunkGraph], log: list | None = None, carried: bool = False) -> _Forest:
     ents = {(g.chunk, e.id): e for g in graphs for e in g.entities}
     forest = _Forest(ents)
-    rule = "a"
+    rule = "0"
 
     def union(a, b, force=False):
         """forest.union that records which rule joined which entities (log: (rule, node, node))."""
@@ -137,6 +139,14 @@ def _resolve(graphs: list[ChunkGraph], log: list | None = None) -> _Forest:
             log.append((rule, a, b))
         return forest.union(a, b, force)
 
+    if carried:  # (0) one number, one entity across the document's chunks
+        first: dict[str, tuple] = {}
+        for node in ents:
+            if node[1] in first:
+                union(first[node[1]], node)
+            else:
+                first[node[1]] = node
+    rule = "a"
     # (a) overlap anchor: the same name at the same document offset, same type; pronouns and descriptions are
     # never anchors (the same "It" position can belong to different entities of different chunks)
     anchor: dict[tuple, tuple] = {}
@@ -245,9 +255,9 @@ def _best_name(members: list[ChunkEntity]) -> str:
     return max(names, key=len)  # the fullest name; the first of equals
 
 
-def _groups(graphs: list[ChunkGraph]):
+def _groups(graphs: list[ChunkGraph], carried: bool = False):
     """(forest, root -> [(chunk, entity)] in document order, root -> merged id "e1", "e2", ...)."""
-    forest = _resolve(graphs)
+    forest = _resolve(graphs, carried=carried)
     members: dict[tuple, list[tuple[int, ChunkEntity]]] = {}
     for g in graphs:
         for e in g.entities:
@@ -280,11 +290,11 @@ def _doc_sentence_for_relation(chunk_entities: dict[str, ChunkEntity], r, sents,
 
 
 def merge(graphs: list[ChunkGraph], text: str, schema: Schema | None = None, doc_id: str = "document",
-          model: dict | None = None, version: str = "") -> Graph:
+          model: dict | None = None, version: str = "", carried: bool = False) -> Graph:
     """One document graph from the chunk graphs of `text` (see the module docstring)."""
     schema = schema or BUSINESS
     graphs = sorted(graphs, key=lambda g: g.chunk)
-    forest, members, new_id = _groups(graphs)
+    forest, members, new_id = _groups(graphs, carried)
     sents = sentence_spans(text)
     entities = []
     for root, ms in members.items():

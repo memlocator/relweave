@@ -181,3 +181,28 @@ def test_cli_passes_schema_cut_margin_and_batch_size(tmp_path, monkeypatch):
                                    "my.py:MINE", "--cut", "-1.5", "--margin", "1", "--batch-size", "4"])
     assert res.exit_code == 0, res.output
     assert (seen["schema"], seen["cut"], seen["margin"], seen["batch_size"]) == ("my.py:MINE", -1.5, 1.0, 4)
+
+
+def test_carry_forward_generates_in_rounds_with_each_documents_own_known_entities():
+    from relweave.schema import ExtractionOutput
+    seen = []
+
+    class CarryCE(FakeCE):
+        def generate_many(self, items, batch_size):
+            seen.append([(k, known) for k, _, known in items])
+            out = {}
+            for k, text, known in items:
+                d = k.split(":")[0]
+                ents = [types.SimpleNamespace(id="e1", type="Org", mentions=[f"Acme{d}"], name=f"Acme{d}")]
+                out[k] = types.SimpleNamespace(output=ExtractionOutput.model_construct(entities=ents, relations=[]),
+                                               error=None, raw="")
+            return out
+
+    e = make(CarryCE())
+    e.carry = True
+    e._ce.carry = True
+    gen = e._generate_carried([[types.SimpleNamespace(index=0, text="x"), types.SimpleNamespace(index=1, text="y")],
+                               [types.SimpleNamespace(index=0, text="z")]])
+    assert len(gen) == 3 and len(seen) == 2
+    assert all(known == "" for _, known in seen[0])  # first round: nothing known yet
+    assert seen[1] == [("0:1", "E1 Org: Acme0")]  # document 0's own entity, not document 1's

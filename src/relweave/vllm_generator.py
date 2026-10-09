@@ -68,15 +68,17 @@ class VllmExtractor:
                               structured_outputs=StructuredOutputsParams(grammar=grammar))
 
     def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0) -> list[ExtractionResult]:
+        items = [(*it, None)[:3] for it in items]  # (key, text) or (key, text, known entity lines)
         prompts = [generation_prompt(self.tokenizer, chat_messages(text, self.fmt, compact=self.compact,
-                                                                   schema=self.schema, conditioned=self.conditioned))
-                   for _, text in items]
+                                                                   schema=self.schema, conditioned=self.conditioned,
+                                                                   known=known))
+                   for _, text, known in items]
         t0 = time.perf_counter()
         outs = self.llm.generate(prompts, [self._params(text) for _, text in items], lora_request=self.lora,
                                  use_tqdm=False)
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []
-        for (cid, text), o in zip(items, outs):
+        for (cid, text, _), o in zip(items, outs):
             raw = o.outputs[0].text
             results.append(finish(cid, text, drop_repeats(raw) if self.stop_on_repeat else raw, per_chunk,
                                   fmt=self.fmt, schema=self.schema))

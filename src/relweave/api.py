@@ -48,13 +48,14 @@ class Extractor:
     a chunk the head could not score keeps the generator's relations unfiltered."""
 
     _zs = None  # the zero-shot adapter (zeroshot=True)
+    carry = False  # carry-forward generation (earlier chunks' entities in the prompt)
 
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
                  max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
-                 threshold: float | dict | None = None):
+                 threshold: float | dict | None = None, carry: bool | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         if generator is None or head is None:
@@ -85,6 +86,7 @@ class Extractor:
             # both parts resident: generator about 3.6 GB plus head or zero-shot adapter about 3.4 GB, plus activations
             sequential = torch.cuda.mem_get_info()[0] < RESIDENT_MB * 2**20
         self.sequential = sequential
+        self.carry = self._ce.carry if carry is None else carry
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
                            "cut": self._ce.cut, "margin": self._ce.margin}
@@ -110,7 +112,8 @@ class Extractor:
         items = [(f"{d}:{c.index}", c.text) for d, chunks in enumerate(chunked) for c in chunks]
         try:
             _load(ce.load_generator, "generator")
-            generated = ce.generate_many(items, self.batch_size) if items else {}
+            generated = self._generate_carried(chunked) if self.carry else (
+                ce.generate_many(items, self.batch_size) if items else {})
             failures = [r for r in generated.values() if isinstance(r, Exception)]
             if items and len(failures) == len(items):
                 raise RuntimeError(f"generation failed on every chunk ({_why(failures[0])}){_memory_note()}") \
@@ -122,7 +125,8 @@ class Extractor:
                       "zero-shot adapter" if self._zs is not None else "pair head")
             for d, chunks in enumerate(chunked):
                 graphs = [self._chunk_graph(c, generated[f"{d}:{c.index}"]) for c in chunks]
-                yield d, merge(graphs, texts[d], self.schema, doc_ids[d], self.model_info, version("relweave"))
+                yield d, merge(graphs, texts[d], self.schema, doc_ids[d], self.model_info, version("relweave"),
+                               carried=self.carry)
         finally:
             if self.sequential:
                 ce.unload_generator()
@@ -146,6 +150,30 @@ class Extractor:
             g.warnings.append(f"chunk {c.index}: head scoring failed ({_why(e)}); generator relations kept unfiltered")
             return g
 
+
+    def _generate_carried(self, chunked) -> dict:
+        """Carry-forward generation in rounds: chunk k of every document together, each with the entities its own
+        earlier chunks produced (relweave.carry.known_lines, the list the model was trained on)."""
+        from relweave.carry import Known, known_lines
+        known = [{} for _ in chunked]  # per document: number -> Known
+        generated = {}
+        for k in range(max((len(c) for c in chunked), default=0)):
+            items = [(f"{d}:{cs[k].index}", cs[k].text, known_lines(list(known[d].values())))
+                     for d, cs in enumerate(chunked) if k < len(cs)]
+            got = self._ce.generate_many(items, self.batch_size)
+            generated.update(got)
+            for d, cs in enumerate(chunked):
+                r = got.get(f"{d}:{cs[k].index}") if k < len(cs) else None
+                if r is None or isinstance(r, Exception) or r.output is None:
+                    continue
+                for e in r.output.entities:
+                    n = int(e.id[1:]) if e.id[1:].isdigit() else None
+                    if n is None:
+                        continue
+                    entry = known[d].setdefault(n, Known(n, str(e.type)))
+                    entry.surfaces.extend(m for m in e.mentions if m not in entry.surfaces)
+                    entry.last_seen = k
+        return generated
 
     def _zeroshot_graph(self, c, r) -> ChunkGraph:
         """The generator's entities, relations scored by the zero-shot adapter for the user's schema."""
