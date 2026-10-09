@@ -147,7 +147,7 @@ class Format(Protocol):
 
     def system_prompt(self) -> str: ...
     def render_input(self, text: str) -> str: ...
-    def encode(self, out: ExtractionOutput, text: str) -> str: ...
+    def encode(self, out: ExtractionOutput, text: str, keep_numbers: bool = False) -> str: ...
     def decode(self, raw: str, text: str) -> tuple[dict | None, str | None]: ...
     def grammar_key(self, text: str): ...
     def compile(self, compiler, text: str = ""): ...
@@ -164,12 +164,28 @@ COMPACT_SYSTEM = "Extract the typed knowledge graph from the text."
 CONDITIONED_SYSTEM = "Extract the typed knowledge graph from the text, using only these types."
 
 
+KNOWN_HEADER = "Known entities from earlier text:"
+
+
+def with_known(content: str, known: str | None) -> str:
+    """The chunk's input with the entities found in earlier chunks of the document before it ("E1 Org: Acme | the
+    company" lines, numbered as the answer should reuse them); unchanged without them."""
+    return f"{KNOWN_HEADER}\n{known.strip()}\n\n{content}" if known and known.strip() else content
+
+
 def messages(fmt: Format, chunk_text: str, with_example: bool = True,
-             compact: bool = False, conditioned: bool = False) -> list[dict[str, str]]:
+             compact: bool = False, conditioned: bool = False, known: str | None = None) -> list[dict[str, str]]:
     """Chat messages for one chunk: system prompt, one worked example, the chunk.
     compact=True: a one-line system prompt and no worked example (fine-tuned students only).
     conditioned=True: a one-line system prompt plus the rendered schema, no example.
+    known: entity lines from earlier chunks (carry-forward), put before the chunk; the answer reuses their numbers.
     The worked example is a business-schema example, so it is left out under any other schema."""
+    msgs = _messages(fmt, chunk_text, with_example, compact, conditioned)
+    msgs[-1] = {**msgs[-1], "content": with_known(msgs[-1]["content"], known)}
+    return msgs
+
+
+def _messages(fmt: Format, chunk_text: str, with_example: bool, compact: bool, conditioned: bool) -> list[dict[str, str]]:
     if conditioned:
         return [{"role": "system", "content": CONDITIONED_SYSTEM + "\n" + fmt.schema.render()},
                 {"role": "user", "content": fmt.render_input(chunk_text)}]
@@ -214,7 +230,7 @@ class JsonFormat(SchemaBound):
     def render_input(self, text: str) -> str:
         return f"Text:\n{text}\n\nJSON:"
 
-    def encode(self, out: ExtractionOutput, text: str) -> str:
+    def encode(self, out: ExtractionOutput, text: str, keep_numbers: bool = False) -> str:
         return json.dumps(out.model_dump(mode="json"), ensure_ascii=False)
 
     def decode(self, raw: str, text: str) -> tuple[dict | None, str | None]:
@@ -295,9 +311,14 @@ class LineFormat(SchemaBound):
                 return i + 1
         return len(bounds)
 
-    def encode(self, out: ExtractionOutput, text: str) -> str:
+    def encode(self, out: ExtractionOutput, text: str, keep_numbers: bool = False) -> str:
+        """keep_numbers: entity ids "e<n>" keep n as their number (carry-forward: a known entity keeps the number it
+        has in the known list); otherwise entities are numbered 1, 2, 3 in order."""
         keys = self._attribute_keys()
         number = {e.id: i + 1 for i, e in enumerate(out.entities)}
+        if keep_numbers:
+            number = {e.id: int(e.id[1:]) for e in out.entities}
+            out = out.model_copy(update={"entities": sorted(out.entities, key=lambda e: number[e.id])})
         lines = [f"E{number[e.id]} {str(e.type)}: " + " | ".join(e.mentions) for e in out.entities]
         for r in out.relations:
             line = (f"R {r.type} E{number[r.source]} E{number[r.target]} {r.modality.value} "
@@ -402,9 +423,14 @@ class SentenceFormat(LineFormat):
             + schema_description(self.schema)
         )
 
-    def encode(self, out: ExtractionOutput, text: str) -> str:
+    def encode(self, out: ExtractionOutput, text: str, keep_numbers: bool = False) -> str:
+        """keep_numbers: entity ids "e<n>" keep n as their number (carry-forward: a known entity keeps the number it
+        has in the known list); otherwise entities are numbered 1, 2, 3 in order."""
         keys = self._attribute_keys()
         number = {e.id: i + 1 for i, e in enumerate(out.entities)}
+        if keep_numbers:
+            number = {e.id: int(e.id[1:]) for e in out.entities}
+            out = out.model_copy(update={"entities": sorted(out.entities, key=lambda e: number[e.id])})
         lines = [f"E{number[e.id]} {str(e.type)}: " + " | ".join(e.mentions) for e in out.entities]
         by_sentence: dict[int, list[tuple]] = {}
         for r in out.relations:
@@ -562,12 +588,12 @@ def generation_prompt(tokenizer, messages: list[dict[str, str]]) -> str:
 
 
 def chat_messages(chunk_text: str, fmt: str, with_example: bool = True, compact: bool = False,
-                  schema: Schema | None = None, conditioned: bool = False) -> list[dict[str, str]]:
+                  schema: Schema | None = None, conditioned: bool = False, known: str | None = None) -> list[dict[str, str]]:
     """Prompt for one chunk in the given output format; compact=True for compact-prompt students.
     schema: the schema the prompt and grammar describe (default BUSINESS); conditioned=True puts the
     rendered schema in the system prompt."""
     f = FORMATS[fmt] if schema is None else FORMATS[fmt].with_schema(schema)
-    return messages(f, chunk_text, with_example=with_example, compact=compact, conditioned=conditioned)
+    return messages(f, chunk_text, with_example=with_example, compact=compact, conditioned=conditioned, known=known)
 
 
 @dataclass

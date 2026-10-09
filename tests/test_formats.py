@@ -214,3 +214,21 @@ def test_chat_messages_threads_schema_and_conditioned():
     from relweave.formats import chat_messages
     m = chat_messages("Acme operates in Oslo.", "sentences", schema=TOY, conditioned=True)
     assert len(m) == 2 and TOY.render() in m[0]["content"] and "HEADQUARTERED_IN" not in m[0]["content"]
+
+
+def test_carry_forward_keeps_known_numbers_through_encode_and_decode():
+    from relweave.formats import FORMATS, KNOWN_HEADER, chat_messages
+    from relweave.schema import ExtractionOutput
+    text = "The company bought Brightwater in 2020."
+    out = ExtractionOutput.model_validate({
+        "entities": [{"id": "e4", "type": "Org", "name": "Brightwater", "mentions": ["Brightwater"]},
+                     {"id": "e2", "type": "Org", "name": "Acme", "mentions": ["The company"]}],
+        "relations": [{"type": "ACQUIRED", "source": "e2", "target": "e4", "evidence": text}]})
+    f = FORMATS["sentences"]
+    raw = f.encode(out, text, keep_numbers=True)
+    assert raw.splitlines()[:2] == ["E2 Org: The company", "E4 Org: Brightwater"] and "R ACQUIRED E2 E4" in raw
+    data, err = f.decode(raw, text)
+    assert err is None and {(r["source"], r["target"]) for r in data["relations"]} == {("e2", "e4")}
+    msgs = chat_messages(text, "sentences", compact=True, known="E1 Person: Ingrid Holm\nE2 Org: Acme | the company")
+    assert msgs[-1]["content"].startswith(KNOWN_HEADER + "\nE1 Person: Ingrid Holm")
+    assert chat_messages(text, "sentences", compact=True)[-1]["content"] == f.render_input(text)

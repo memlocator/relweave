@@ -35,8 +35,9 @@ def build_examples(chunks_path: Path, fmt: str = STUDENT_FORMAT, compact: bool =
             continue
         gold, schema, root = view
         f = FORMATS[fmt].with_schema(schema)
-        msgs = messages(f, c["text"], compact=compact, conditioned=conditioned)
-        answer = f.encode(gold, c["text"])
+        known = c.get("known")  # carry-forward: entity lines of earlier chunks; the gold keeps their numbers
+        msgs = messages(f, c["text"], compact=compact, conditioned=conditioned, known=known)
+        answer = f.encode(gold, c["text"], keep_numbers=True) if known is not None else f.encode(gold, c["text"])
         if c.get("task") == "relations_only":  # entities given in the prompt, relations are the whole answer
             entity_part, relation_part = split_entities(answer)
             msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + "\n\nEntities:\n" + entity_part}
