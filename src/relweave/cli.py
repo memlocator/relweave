@@ -57,14 +57,16 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                       "(types defined at run time; entities still come from the generator)"),
         threshold: float | None = typer.Option(None, help=f"zero-shot: keep relations whose density-adjusted score is above this (default {DEFAULT_THRESHOLD}; "
                                         "scores are adjusted for the number of entity pairs per chunk)"),
-        zeroshot_weights: str | None = typer.Option(None, help="zero-shot adapter (default chrullis/relweave-4b-zeroshot)")) -> None:
+        zeroshot_weights: str | None = typer.Option(None, help="zero-shot adapter (default chrullis/relweave-4b-zeroshot)"),
+        keep_unnamed: bool = typer.Option(False, help="keep relations of entities never named, only described "
+                                          "(\"the business\", \"she\"); off by default: most are unlinked back-references")) -> None:
     """Extract a graph from each file; all files go through one Extractor, so each model loads once."""
     import relweave
     try:
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
                                 margin=margin, batch_size=_batch(batch_size), max_words=max_words, reserve_mb=reserve_mb,
                                 generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
-                                zeroshot_weights=zeroshot_weights)
+                                zeroshot_weights=zeroshot_weights, keep_unnamed=keep_unnamed)
         many = len(files) > 1
         if many:
             out.mkdir(parents=True, exist_ok=True)

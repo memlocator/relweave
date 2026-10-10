@@ -279,3 +279,10 @@ def test_relations_of_never_named_entities_are_dropped():
         assert len(merge([a, b], "").relations) == 1
     finally:
         m.DROP_UNLINKED = True
+
+
+def test_keep_unnamed_restores_relations_of_never_named_entities():
+    a = cg(0, [ent("e1", "Person", "Colleen Kieran"), ent("e2", "Org", "The business", "the business")],
+           [ChunkRelation("EMPLOYED_BY", "e1", "e2")])
+    assert merge([a], "").relations == []
+    assert len(merge([a], "", keep_unnamed=True).relations) == 1

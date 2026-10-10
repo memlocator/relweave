@@ -291,8 +291,10 @@ def _doc_sentence_for_relation(chunk_entities: dict[str, ChunkEntity], r, sents,
 
 
 def merge(graphs: list[ChunkGraph], text: str, schema: Schema | None = None, doc_id: str = "document",
-          model: dict | None = None, version: str = "", carried: bool = False) -> Graph:
-    """One document graph from the chunk graphs of `text` (see the module docstring)."""
+          model: dict | None = None, version: str = "", carried: bool = False, keep_unnamed: bool | None = None) -> Graph:
+    """One document graph from the chunk graphs of `text` (see the module docstring). Relations of an entity no chunk
+    ever named ("the business", "she") are left out unless keep_unnamed: most are back-references the merge could not
+    link (counted wrong twice), but some are true facts about a thing the text never names."""
     schema = schema or BUSINESS
     graphs = sorted(graphs, key=lambda g: g.chunk)
     forest, members, new_id = _groups(graphs, carried)
@@ -316,7 +318,8 @@ def merge(graphs: list[ChunkGraph], text: str, schema: Schema | None = None, doc
         entities.append(Entity(eid, ms[0][1].type, _best_name([e for _, e in ms]), occ, attrs,
                                sorted({c for c, _ in ms}), aliases))
     # an entity no chunk ever named ("the business", "she") is a reference the merge could not resolve
-    unlinked = {e.id for e in entities if DROP_UNLINKED and all(is_generic(t) for t in [o.text for o in e.mentions]
+    drop = DROP_UNLINKED if keep_unnamed is None else not keep_unnamed
+    unlinked = {e.id for e in entities if drop and all(is_generic(t) for t in [o.text for o in e.mentions]
                                                                    + e.aliases + [e.name])}
     relations: dict[tuple, Relation] = {}
     for g in graphs:

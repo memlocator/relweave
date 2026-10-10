@@ -55,9 +55,10 @@ class Extractor:
                  max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
-                 threshold: float | dict | None = None, carry: bool | None = None):
+                 threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
+        self.keep_unnamed = keep_unnamed
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
@@ -126,7 +127,7 @@ class Extractor:
             for d, chunks in enumerate(chunked):
                 graphs = [self._chunk_graph(c, generated[f"{d}:{c.index}"]) for c in chunks]
                 yield d, merge(graphs, texts[d], self.schema, doc_ids[d], self.model_info, version("relweave"),
-                               carried=self.carry)
+                               carried=self.carry, keep_unnamed=getattr(self, "keep_unnamed", False))
         finally:
             if self.sequential:
                 ce.unload_generator()
