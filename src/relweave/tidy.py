@@ -40,8 +40,9 @@ def tidy(text: str) -> str:
                 out.append("")
             continue
         prev = out[-1] if out else ""
-        # a wrapped line continues the previous one; after a list item only a lower-case line does
-        wrapped = prev and not BULLET.match(s) and (
+        # a wrapped line continues the previous one; after a list item only a lower-case line does; table rows
+        # (markdown pipes) are never joined
+        wrapped = prev and not BULLET.match(s) and not s.startswith("|") and not prev.startswith("|") and (
             s[:1].islower() if BULLET.match(prev) else not END.search(prev) or (len(prev) >= 0.7 * width and s[:1].islower()))
         if wrapped and re.search(r"[A-Za-z]-$", prev) and s[:1].islower():
             out[-1] = prev[:-1] + s  # a word hyphenated across the break

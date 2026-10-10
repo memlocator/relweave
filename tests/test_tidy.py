@@ -21,3 +21,8 @@ def test_keeps_list_items_and_decodes_entities():
     out = tidy("Board members:\n• Jane Roe\n• John Doe\nJohnson &amp; Johnson owns it .")
     assert out.splitlines()[:3] == ["Board members:", "• Jane Roe", "• John Doe"]
     assert out.endswith("Johnson & Johnson owns it.")
+
+
+def test_table_rows_stay_lines():
+    t = "Board below.\n\n| Name | Role |\n|---|---|\n| Ana Varga | Chair |\n| Ben Okafor | CFO |\n\nThe end."
+    assert "| Ana Varga | Chair |\n| Ben Okafor | CFO |" in tidy(t)

@@ -70,15 +70,31 @@ SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'(\[])")
 NO_SPLIT_AFTER = re.compile(r"(?:(?<![\w.])[A-Z]|\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|Prof|Gen|Col|Lt|Mt|Rev|lit|approx|vs|No|no))\.$")
 
 
-def sentence_bounds(text: str) -> list[tuple[int, int]]:
-    bounds = []
-    start = 0
-    for m in SENTENCE_RE.finditer(text):
-        if NO_SPLIT_AFTER.search(text[max(0, m.start() - 8):m.start()]):
+TABLE_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)  # a markdown table row, as Word or HTML tables dump to text
+TABLE_RULE = re.compile(r"^[ \t]*\|[\s:|-]*\|[ \t]*$")  # its |---|---| separator: no content
+
+
+def _prose_bounds(text: str, lo: int, hi: int) -> list[tuple[int, int]]:
+    bounds, start = [], lo
+    for m in SENTENCE_RE.finditer(text, lo, hi):
+        if NO_SPLIT_AFTER.search(text[max(lo, m.start() - 8):m.start()]):
             continue
         bounds.append((start, m.start()))
         start = m.end()
-    bounds.append((start, len(text)))
+    bounds.append((start, hi))
+    return bounds
+
+
+def sentence_bounds(text: str) -> list[tuple[int, int]]:
+    """Sentence spans; each markdown table row is a sentence of its own (a row states its facts the way a sentence
+    does), and separator rows are none."""
+    bounds, at = [], 0
+    for row in TABLE_ROW.finditer(text):
+        bounds += _prose_bounds(text, at, row.start())
+        if not TABLE_RULE.match(row.group()):
+            bounds.append((row.start(), row.end()))
+        at = row.end()
+    bounds += _prose_bounds(text, at, len(text))
     return [(s, e) for s, e in bounds if text[s:e].strip()]
 
 
