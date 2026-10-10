@@ -26,3 +26,10 @@ def test_keeps_list_items_and_decodes_entities():
 def test_table_rows_stay_lines():
     t = "Board below.\n\n| Name | Role |\n|---|---|\n| Ana Varga | Chair |\n| Ben Okafor | CFO |\n\nThe end."
     assert "| Ana Varga | Chair |\n| Ben Okafor | CFO |" in tidy(t)
+
+
+def test_word_export_clutter():
+    t = ("Contents\n\nSummary..........2\nFindings.......4\n\nSummary\n\nThe ministry agreed.6 Ana Varga presented it.\n\n"
+         "\tfirst point\n\n{ PAGE }\n\nThe end.")
+    out = tidy(t)
+    assert "....." not in out and "{ PAGE }" not in out and "agreed. Ana Varga" in out and "- first point" in out

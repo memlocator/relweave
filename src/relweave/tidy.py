@@ -1,6 +1,7 @@
 """Clean up text dumped from PDFs, web pages and scans before extraction: lines hard-wrapped inside a paragraph are
 joined (a word hyphenated across the break is rejoined), page numbers, form feeds and running headers or footers are
-dropped, HTML entities decoded and runs of spaces collapsed. Paragraph breaks (blank lines) are kept, since the
+dropped, HTML entities decoded and runs of spaces collapsed; from Word exports, table-of-contents lines, field codes ({ PAGE }),
+footnote numbers glued to a sentence end and the Symbol-font bullet are removed. Markdown table rows are kept as lines. Paragraph breaks (blank lines) are kept, since the
 chunker cuts at them.
 
 tidy() is conservative: a line break is kept after sentence-ending punctuation when the next line is short or looks
@@ -15,6 +16,9 @@ import re
 PAGE_NUMBER = re.compile(r"^\s*(?:page\s+)?\d{1,4}(?:\s*(?:of|/)\s*\d{1,4})?\s*$", re.I)
 BULLET = re.compile(r"^\s*(?:[•\-*–·]|\d{1,2}[.)]|[a-z][.)])\s+")
 END = re.compile(r"[.!?:;\"'”’)]\s*$")
+TOC_LINE = re.compile(r"^.{2,80}?\.{5,}\s*\d{1,4}\s*$")  # a table-of-contents line: "Findings..........4"
+FIELD_CODE = re.compile(r"\{\s*(?:PAGE|NUMPAGES|DATE|TIME|HYPERLINK|REF|TOC|SEQ|MERGEFIELD)\b[^{}]*\}")  # Word fields
+FOOTNOTE = re.compile(r"(?<=[a-z]\.)\d{1,2}(?=\s+[A-Z])")  # "agreed.6 The ..." -> "agreed. The ..."
 
 
 def _running_lines(lines: list[str]) -> set[str]:
@@ -28,9 +32,10 @@ def _running_lines(lines: list[str]) -> set[str]:
 
 def tidy(text: str) -> str:
     text = html.unescape(text).replace("\r\n", "\n").replace("\f", "\n").replace("­", "")
+    text = FOOTNOTE.sub("", FIELD_CODE.sub("", text)).replace("\u00a0", " ").replace("\uf0b7\t", "- ").replace("\uf0b7", "-")
     lines = text.split("\n")
     running = _running_lines(lines)
-    lines = [s for s in lines if not PAGE_NUMBER.match(s) and s.strip() not in running]
+    lines = [s for s in lines if not PAGE_NUMBER.match(s) and not TOC_LINE.match(s) and s.strip() not in running]
     width = max((len(s) for s in lines), default=0)
     out: list[str] = []
     for s in lines:
