@@ -40,6 +40,7 @@ FUNCTION_WORDS = {"and", "or", "of", "for", "in", "on", "at", "to", "by", "with"
 SURNAME_TYPES = {"Person"}  # types whose one-word names are surnames
 CARRY_FORWARD = True  # rule (d), the description-name link; switchable for evaluation
 CARRY_SAME_CHUNK = False  # rule (d) also within the description's own chunk (evaluation switch)
+DROP_UNLINKED = True  # leave out relations of an entity only ever called by a pronoun or description (switchable for evaluation)
 DETERMINERS = {"the", "a", "an", "this", "that", "these", "those", "its", "his", "her", "their", "our", "my", "your"}
 GENERIC_NOUNS = {"company", "group", "unit", "area", "firm", "organisation", "organization", "corporation", "business",
                  "brand", "division", "subsidiary", "parent", "enterprise", "agency", "institution", "venture",
@@ -314,6 +315,9 @@ def merge(graphs: list[ChunkGraph], text: str, schema: Schema | None = None, doc
         aliases = list(dict.fromkeys(m.text for _, e in ms for m in e.mentions if m.text not in found))
         entities.append(Entity(eid, ms[0][1].type, _best_name([e for _, e in ms]), occ, attrs,
                                sorted({c for c, _ in ms}), aliases))
+    # an entity no chunk ever named ("the business", "she") is a reference the merge could not resolve
+    unlinked = {e.id for e in entities if DROP_UNLINKED and all(is_generic(t) for t in [o.text for o in e.mentions]
+                                                                   + e.aliases + [e.name])}
     relations: dict[tuple, Relation] = {}
     for g in graphs:
         local = {e.id: e for e in g.entities}
@@ -322,7 +326,7 @@ def merge(graphs: list[ChunkGraph], text: str, schema: Schema | None = None, doc
             if not all(n in forest.parent for n in ends):
                 continue  # a relation naming an entity the chunk never listed
             s, t = (new_id[forest.find(n)] for n in ends)
-            if s == t:
+            if s == t or s in unlinked or t in unlinked:
                 continue
             sent = r.sentence or _doc_sentence_for_relation(local, r, sents, g.start, g.end or len(text))
             key = canonical_triple(r.type, s, t, schema)

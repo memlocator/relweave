@@ -264,3 +264,18 @@ def test_carried_numbers_join_across_chunks_only_with_carry_forward():
     assert len(joined.entities) == 2 and joined.relations[0].source == next(
         e.id for e in joined.entities if e.name == "Halvorsen Brewing")
     assert len(merge([a, b], "").entities) == 3
+
+
+def test_relations_of_never_named_entities_are_dropped():
+    # "the company" in chunk 1 has two candidates in chunk 0, so it stays unlinked: its relation is left out
+    a = cg(0, [ent("e1", "Org", "Acme", "Acme", "the company"), ent("e2", "Org", "Bolt", "Bolt", "the company")])
+    b = cg(1, [ent("e1", "Org", "The company", "the company"), ent("e2", "Place", "Oslo")],
+           [ChunkRelation("HEADQUARTERED_IN", "e1", "e2")])
+    assert merge([a, b], "").relations == []
+    import importlib
+    m = importlib.import_module("relweave.merge")  # the module; relweave.merge is also the exported function
+    m.DROP_UNLINKED = False
+    try:
+        assert len(merge([a, b], "").relations) == 1
+    finally:
+        m.DROP_UNLINKED = True
