@@ -288,8 +288,8 @@ supplies the prompt settings and tokenizer."""
         if not items:
             return 1
         gen = self._gen
-        longest = max(len(gen.tokenizer(generation_prompt(gen.tokenizer, gen._messages(t)))["input_ids"])
-                      for _, t in items)
+        longest = max(len(gen.tokenizer(generation_prompt(gen.tokenizer, gen._messages(*it[1:])))["input_ids"])
+                      for it in items)  # (key, text) or (key, text, known): the known lines count toward the prompt
         row = (longest + min(longest, gen.max_new_tokens)) * kv_bytes_per_token(gen.model.config)
         free = torch.cuda.mem_get_info()[0]
         if _CAP is not None:

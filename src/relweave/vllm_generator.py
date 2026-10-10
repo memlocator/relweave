@@ -74,7 +74,7 @@ class VllmExtractor:
                                                                    known=known))
                    for _, text, known in items]
         t0 = time.perf_counter()
-        outs = self.llm.generate(prompts, [self._params(text) for _, text in items], lora_request=self.lora,
+        outs = self.llm.generate(prompts, [self._params(text) for _, text, _ in items], lora_request=self.lora,
                                  use_tqdm=False)
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []
