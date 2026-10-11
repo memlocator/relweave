@@ -91,6 +91,36 @@ class ExtractionOutput(BaseModel):
         return self
 
 
+RETYPE = True  # an entity the relations show was mistyped (Person/Org/Place) is retyped (switchable for evaluation)
+_SWAP = ("Person", "Org", "Place")
+
+
+def _retype(entities: list[Entity], raws: list, schema: Schema) -> tuple[list[Entity], int]:
+    """Entities retyped where their relations say so: "Kappahl's sustainability director, Sandra Roos" written as
+    EMPLOYED_BY with Kappahl typed Person is illegal, but legal with Kappahl an Org. An entity takes another of
+    Person/Org/Place only when that makes strictly more of its relations legal and none that is legal now illegal."""
+    types = {e.id: e.type for e in entities}
+    rels = [(r.get("type"), r.get("source"), r.get("target")) for r in raws if isinstance(r, dict)]
+    rels = [(t, a, b) for t, a, b in rels if t in schema.edge_names() and a in types and b in types]
+    new = {}
+    for e in entities:
+        if e.type not in _SWAP:
+            continue
+        mine = [(t, a, b) for t, a, b in rels if e.id in (a, b) and a != b]
+
+        def ok(ty, t, a, b):
+            return schema.legal(t, ty if a == e.id else types[a], ty if b == e.id else types[b])
+        now = [x for x in mine if ok(e.type, *x)]
+        for alt in _SWAP:
+            if alt == e.type:
+                continue
+            then = [x for x in mine if ok(alt, *x)]
+            if len(then) > len(now) and all(x in then for x in now):
+                new[e.id] = alt
+                break
+    return [e.model_copy(update={"type": new[e.id]}) if e.id in new else e for e in entities], len(new)
+
+
 def parse_lenient(data: dict, repair: bool = False, schema: Schema | None = None,
                   stats: dict | None = None) -> tuple[ExtractionOutput, int, int]:
     """Validate entities strictly; drop relations that dangle or violate endpoint types.
@@ -111,6 +141,10 @@ def parse_lenient(data: dict, repair: bool = False, schema: Schema | None = None
     entities = [e for e in parsed if e.type in schema.node_names()]
     if stats is not None:
         stats["dropped_entities"] = len(parsed) - len(entities)
+    if RETYPE:
+        entities, n = _retype(entities, data.get("relations", []), schema)
+        if stats is not None:
+            stats["retyped_entities"] = n
     by_id = {e.id: e for e in entities}
     if len(by_id) != len(entities):
         raise ValueError("duplicate entity ids")
