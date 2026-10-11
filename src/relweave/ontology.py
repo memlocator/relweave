@@ -1,16 +1,14 @@
-"""The simple ontology: people, organisations and places, and how they relate, in six relation types. The model
-extracts the business schema's finer types; coarsen() maps them here, keeping the fine type as the attribute
-`fine_type` (and its role-like attributes). This module is the one definition: the labelling brief's ontology text is
-render() and the evaluation maps gold and predictions with coarse_type().
+"""A simple view of the business schema: people, organisations and places, and how they relate, in six relation
+types that group the schema's existing Person/Org/Place relation types (no new relation is introduced; the official
+types stay the fine ones). coarsen() maps a graph to this view, keeping the fine type as the attribute `fine_type`;
+the evaluation reports it as a second score with coarse_type().
 
   AFFILIATED_WITH  Person -> Org     works for, leads, sits on the board of, is a member of, or founded the Org
   OWNS             Person|Org -> Org owns a stake in, controls, or bought the Org (or, for an Org, founded it)
   PART_OF          Org -> Org        is a subsidiary, division, unit or brand of the Org
   LOCATED_IN       Person|Org|Place -> Place   lives, is based, operates or lies in the Place, or was born there
   FAMILY_OF        Person - Person   a family tie (symmetric)
-  ASSOCIATED_WITH  Person|Org - Person|Org     the fallback: any other link the text states between them (partners,
-                   supplier and customer, adviser, counsel, opposing parties, met or communicated), with `how`, the
-                   connecting phrase; used only when no type above fits (symmetric)
+  ASSOCIATED_WITH  Person - Person   associates, met, communicated (ASSOCIATE_OF, MET_WITH, COMMUNICATED_WITH; symmetric)
 """
 from __future__ import annotations
 
@@ -28,10 +26,8 @@ TYPES = {  # name: (sources, targets, symmetric, definition)
     "LOCATED_IN": (("Person", "Org", "Place"), ("Place",), False,
                    "lives, is based, operates or lies in the Place, or was born there"),
     "FAMILY_OF": (("Person",), ("Person",), True, "a family tie; attributes: kind"),
-    "ASSOCIATED_WITH": (("Person", "Org"), ("Person", "Org"), True,
-                        "any other link the text states between two people or organisations (partners, supplier "
-                        "and customer, adviser, counsel, opposing parties, met or communicated); only when no type "
-                        "above fits; attributes: how (the connecting phrase from the text)"),
+    "ASSOCIATED_WITH": (("Person",), ("Person",), True, "persons described as associates or partners, or who met or "
+                        "communicated"),
 }
 
 _FINE = {"EMPLOYED_BY": "AFFILIATED_WITH", "EXECUTIVE_OF": "AFFILIATED_WITH", "BOARD_MEMBER_OF": "AFFILIATED_WITH",
