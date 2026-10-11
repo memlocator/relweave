@@ -339,8 +339,11 @@ supplies the prompt settings and tokenizer."""
         self.last_batch_size = b
         return out
 
-    def pair_scores(self, chunk: Chunk, result) -> dict[str, float]:
-        """Head margins "TYPE i j" -> score for every entity pair of the generator's entity lines."""
+    def pair_scores(self, chunk: Chunk, result, as_type: dict[int, str] | None = None,
+                    only: int | None = None) -> dict[str, float]:
+        """Head margins "TYPE i j" -> score for every entity pair of the generator's entity lines. as_type: entity
+        number -> a type to read it as instead (its line and its probes are rewritten); only: score just the pairs
+        of that entity."""
         import torch
         from relweave.formats import chat_messages, generation_prompt
         from relweave.head import entity_lines, labels, probe_states
@@ -349,13 +352,16 @@ supplies the prompt settings and tokenizer."""
         labs = labels(self.schema)
         sym = {t for t, _ in labs} - {t for t, d in labs if d == "<"}
         ents, types = entity_lines(result.raw)
+        for n, ty in (as_type or {}).items():
+            ents = re.sub(rf"^E{n} {types.get(n, '')}: ", f"E{n} {ty}: ", ents, flags=re.M)
+            types[n] = ty
         if len(types) < 2:
             return {}
         prompt = self.head_config.get("prompt", {})
         pre = generation_prompt(tok, chat_messages(chunk.text, "sentences", compact=prompt.get("compact_prompt", True),
                                                   schema=self.schema,
                                                   conditioned=prompt.get("conditioned", self.conditioned))) + ents
-        every = list(combinations(sorted(types), 2))
+        every = [p for p in combinations(sorted(types), 2) if only is None or only in p]
         parts = grouped(every, self.group, lambda ps: probe_states(model, tok, pre, types, layers, pairs=ps)[1],
                         on_oom=torch.cuda.empty_cache)
         with torch.no_grad():
@@ -369,11 +375,59 @@ supplies the prompt settings and tokenizer."""
                     d[f"{typ} {j} {i}"] = m[p][li]
         return d
 
+    def _try_other_types(self, chunk: Chunk, result, final):
+        """An entity the union left without relations is read as each other of Person/Org/Place: its entity line and
+        probes are rewritten and the head scores its pairs again; if a relation then scores above the margin and is
+        legal under that type, the entity takes the type and the relations are added (relweave.union.RETEST)."""
+        from relweave import union as un
+        from relweave.schema import ExtractionOutput
+        from relweave.schema.output import Relation
+        if not un.RETEST:
+            return final
+        out = final.output
+        linked = {x.source for x in out.relations} | {x.target for x in out.relations}
+        ents, rels = list(out.entities), list(out.relations)
+        have = {(x.type, frozenset((x.source, x.target))) for x in rels}
+        et = {e.id: e.type for e in ents}
+        tried = 0
+        for k, e in enumerate(ents):
+            if e.id in linked or e.type not in un.SWAP or tried >= un.RETEST_MAX:
+                continue
+            tried += 1
+            n, best = int(e.id[1:]), None
+            for alt in un.SWAP:
+                if alt == e.type:
+                    continue
+                t2 = {**et, e.id: alt}
+                sc = self.pair_scores(chunk, result, as_type={n: alt}, only=n)
+                found = []
+                for key, v in sc.items():
+                    typ, a, b = key.split()
+                    a, b = f"e{a}", f"e{b}"
+                    if v > self.margin and a in t2 and b in t2 and self.schema.legal(typ, t2[a], t2[b]) \
+                            and (typ, frozenset((a, b))) not in have:
+                        found.append((v, typ, a, b))
+                if found and (best is None or max(found)[0] > best[0]):
+                    best = (max(found)[0], alt, found)
+            if best:
+                ents[k] = e.model_copy(update={"type": best[1]})
+                et[e.id] = best[1]
+                for v, typ, a, b in sorted(best[2], reverse=True):
+                    if (typ, frozenset((a, b))) not in have:
+                        rels.append(Relation(type=typ, source=a, target=b, evidence=""))
+                        have.add((typ, frozenset((a, b))))
+        if tried == 0 or ents == list(out.entities):
+            return final
+        o = ExtractionOutput.model_validate({"entities": ents, "relations": rels[:un.MAX_RELATIONS_PER_CHUNK]},
+                                            context={"schema": self.schema})
+        return type(final)(chunk_id=final.chunk_id, raw=final.raw, output=o, fmt="sentences")
+
     def combine(self, chunk: Chunk, result, scores: dict[str, float]) -> ChunkGraph:
         """Union of the generator's relations and the head's scores, as a ChunkGraph."""
         from relweave.union import union
         final = union({result.chunk_id: result}, {result.chunk_id: scores}, self.cut, self.margin,
                       schema=self.schema)[result.chunk_id]
+        final = self._try_other_types(chunk, result, final)
         written = {(x.type, x.source, x.target) for x in result.output.relations}
         g = to_chunk_graph(chunk, final.output, written, scores)
         if len(result.output.relations) >= MAX_RELATIONS_PER_CHUNK:
