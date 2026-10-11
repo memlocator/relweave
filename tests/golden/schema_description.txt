@@ -26,7 +26,7 @@ Edge types (source -> target):
 - HAS_COORDINATE: Place -> Coordinate. Place has the stated numeric coordinate
 - OWNS_OBJECT: Org|Person -> Object. Person or Org owns the Object (a physical thing: vehicle, vessel, building, artwork); brands and publications are Orgs; attributes: start, end
 - TRANSFERRED_OBJECT: Event -> Object. The Event transferred the Object (sale, delivery, seizure)
-- PARTICIPATED_IN: Org|Person -> Event. Person or Org took part in the Event; role is buyer, seller, host, attendee; attributes: role
+- PARTICIPATED_IN: Org|Person -> Event. Person or Org took part in the Event; role is buyer, seller, host, attendee, player, candidate, speaker, exhibitor or party to a case; attributes: role
 - HELD_AT: Event -> Place. The Event took place at the Place
 
 Modality of every relation: asserted, negated, hedged, reported.

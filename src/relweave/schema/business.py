@@ -29,7 +29,7 @@ class Coordinate(Entity):
 
 
 class Event(Entity):
-    """Something that happened at a time: a sale, meeting, election, ceremony."""
+    """Something that happened at a time and that the text names or pins to a date: a sale, meeting, election, ceremony, match or final, conference, fair, trial, hearing, launch; not a vague description ("the scheme", "the violence", "a seven-day trial" with no name or date)."""
     kind: str
 
 
@@ -180,7 +180,7 @@ class TransferredObject(Relation[Event, Object]):
 
 
 class ParticipatedIn(Relation[Person | Org, Event]):
-    """Person or Org took part in the Event; role is buyer, seller, host, attendee"""
+    """Person or Org took part in the Event; role is buyer, seller, host, attendee, player, candidate, speaker, exhibitor or party to a case"""
     aliases = ("TOOK_PART_IN", "ATTENDED", "INVOLVED_IN")
     paraphrases = ("Person or Org was a participant in the Event, in a role such as buyer, seller, host or attendee", "Person or Org was involved in the Event, in a role such as buyer, seller, host or attendee")
     role: str | None = None
