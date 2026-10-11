@@ -1,7 +1,7 @@
 """Union of the generator and the pair head: keep a relation the generator wrote unless the head scores it at or
 below CUT (lenient: drops only what the head firmly rejects), and add every relation the head scores above MARGIN on
 its own (legal for the endpoint types, not already present, up to the per-chunk cap). The defaults were chosen on
-validation for the 4B generator and head.
+validation for the 4B generator and head (MARGIN); CUT was raised to 0 for real documents (see CUT).
 
 ALT_TYPES: an entity left without any relation is tried as each other of Person/Org/Place; if the head scores a
 relation above MARGIN that is legal only under that type ("Kappahl's sustainability director, Sandra Roos" with
@@ -12,7 +12,8 @@ from __future__ import annotations
 from relweave.schema import BUSINESS, MAX_RELATIONS_PER_CHUNK, ExtractionOutput, Schema
 from relweave.schema.output import Relation
 
-CUT = -2.0
+CUT = 0.0  # the head vetoes a generated relation it does not lean towards: on real documents -2 -> 0 cut a third of the
+# false relations (0.624 -> 0.648 F1), Wikipedia unchanged (0.755 -> 0.756); the published head's config still says -2
 MARGIN = 0.5
 ALT_TYPES = True  # switchable for evaluation
 RETEST = True  # an unlinked entity is re-scored by the head as each other type (ChunkExtractor._try_other_types)
