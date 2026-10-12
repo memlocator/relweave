@@ -163,6 +163,20 @@ non-empty test set.
 You label the validation and test chunks first. Step 4 then removes training documents that overlap them, so you do not
 pay to label chunks you will throw away. The procedure below is the same for all three sets.
 
+**What the labels leave out, the model learns to leave out.** Measured on our business schema: where the training
+labels skipped relations written as modifiers ("the Danish shipping group Nordvik", "Republican state senator X"), the
+model learned to skip them too, and later training on more examples did not undo it. Three habits keep labels useful:
+
+- **One written convention, settled before labelling.** Decide the hard cases in the schema definitions (is the head
+  of an office EXECUTIVE_OF it or EMPLOYED_BY it? is a party adjective a membership?). Labels that disagree with each
+  other teach the model the average of two conventions.
+- **Two independent passes, then adjudication.** Two blind passes with differently worded instructions, and a third
+  pass that judges only the relations one pass has and the other lacks. One pass misses about a third of what the
+  text states; two passes plus adjudication agreed at 0.75-0.88 on our documents.
+- **Audit completeness on a sample.** Before training, have a judge list what a random 40 chunks state but the labels
+  lack, and group the misses by how the text writes them (verb, title before the name, modifier, possessive, list). A
+  group that is systematically missing is a convention gap to fix in the labels, not in the model.
+
 ### 3a. From scratch with teacher prompts
 
 Write one prompt file per chunk. The schema text in the prompt is rendered from your classes:
@@ -463,7 +477,27 @@ training run) and the head's `head_config.json` (or `train_summary.json`). Each 
 schema's name. Otherwise it raises `ValueError` ("generator was trained on schema ..." or "pair head was trained on
 schema ..."). Without `schema=`, the extractor takes the generator's schema, which must then be one already loaded.
 
+### When the gold itself is made by a model
+
+If your validation and test labels were written by a language model, a relation the model under test writes that the
+gold lacks is not necessarily wrong: on our real documents a third of such "errors" were true facts the labels had
+stated at another level or type, or left out, and a fifth of the gold's own relations were not stated by the text.
+Score by pooled judging instead: collect every relation from the gold and from each system you compare, have two
+independent judges decide each one against the text (true only with a verbatim quote, true only if both agree), and
+compute precision against that and recall against all judged-true relations of the pool (the gold is then a floor for
+recall, not the truth). Test the judges before trusting them: plant decoys (direction swapped, another entity of the
+same type, a sibling type, a true-in-the-world fact the text does not state) and require that they reject almost all
+of them; have a third reader check a random sample blind. Score every system you compare in the same pool, since adding
+a system adds true relations and lowers everyone's pooled recall.
+
 ## 10. Troubleshooting
+
+**Recall does not rise when you add training examples.** Check whether the model already knows the relations it
+misses: score each missed relation's answer line in place (its token probability given the model's own answer up to
+that point) against the lines it does write, and sample a few answers per chunk. If missed lines are nearly as likely
+and appear in samples, the model has learned to omit them (usually from incomplete labels), and more examples of the
+same kind will not help; complete the labels for that construction, and consider training on the model's own judged
+outputs.
 
 **Out of memory in head training.** Lower `--max-probes` (200 to 80). Keep `--upcast` off for the 4B. Close other GPU
 processes: training reserves 700 MB (`--reserve-mb`) and caps its own memory to the rest of the free memory. Chunks too
