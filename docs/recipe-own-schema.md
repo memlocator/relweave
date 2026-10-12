@@ -493,8 +493,10 @@ a system adds true relations and lowers everyone's pooled recall.
 ## 10. Troubleshooting
 
 **Recall does not rise when you add training examples.** Check whether the model already knows the relations it
-misses: score each missed relation's answer line in place (its token probability given the model's own answer up to
-that point) against the lines it does write, and sample a few answers per chunk. If missed lines are nearly as likely
+misses: score each missed relation's answer line in place, given the model's own answer up to that point, against the
+lines it does write, and sample a few answers per chunk. Read the first token of the line (whether the model would
+begin another relation line there at all), not the average over the line, which near-certain tokens such as entity
+numbers dominate once a line has begun. If missed lines are nearly as likely
 and appear in samples, the model has learned to omit them (usually from incomplete labels), and more examples of the
 same kind will not help; complete the labels for that construction, and consider training on the model's own judged
 outputs.
