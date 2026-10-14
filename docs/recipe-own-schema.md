@@ -3,10 +3,13 @@
 This recipe takes you from a list of entity and relation types to a working generator, pair head and `relweave`
 extractor for that schema.
 
-**Status.** Every command and option below was checked against the code (`--help` output and source). An earlier
-version of this recipe was run on its data side (schema module, chunking, teacher prompts, label import, overlap
-check, evaluation code) on a toy two-document example. The recipe has **not** been run end to end on a new schema: no
-generator or head was trained, and no GPU step below was executed for a new schema.
+**Status.** Run end to end on a new schema on 2026-10-14: this recipe's own `projects` example, 24 written documents
+(14 prose, 10 markdown-style), labelled through steps 2 and 3a by a language-model annotator, every command of steps 5
+to 8 run as written on a 24 GB GPU. Results on 6 test chunks: generator alone relation F1 0.83 (P 0.76, R 0.91), entity
+F1 0.92; the generator trained 3 epochs in 3 minutes at 4.7 GB. Two problems it found are fixed here: the labelling
+prompts of a new schema carried no description of the JSON answer (fixed in relweave), and `--examples` sized to the
+number of training chunks starved the head (step 7). With so little data the head did not help (union 0.83 at cut -12,
+0.08 at cut -2): see step 8. The numbers are from a toy set and only show that the steps work.
 
 **New types need data and training.** relweave-4b-base reads the 6 entity types and 21 relation types of its business
 schema. It does not read new types zero-shot. An experimental schema-conditioned head reached 0.29 F1 on unseen
@@ -371,7 +374,7 @@ relweave train-head data/projects/gold_train/train.jsonl --schema projects.py:PR
 | `--own-results` | The generator's results on the training chunks (step 6); repeat the option for several files. Read under your schema. |
 | `--base-head` | A head to continue from (same label set). Leave it out for a new schema. |
 | `--model` | Base model (default `unsloth/qwen3-4b-unsloth-bnb-4bit`). |
-| `--examples` | Training examples (default 2400). Use about the number of training chunks. Up to half use the generator's own entity lines, the rest use gold entity lines, which also add a language-model loss that keeps generation intact. |
+| `--examples` | Training examples (default 2400), sampled with repetition from the training chunks. Keep the default, or at least several hundred: with 110 the dry run trained 7 steps and the head learned nothing. Up to half use the generator's own entity lines, the rest use gold entity lines, which also add a language-model loss that keeps generation intact. |
 | `--max-probes` | Probes per chunk (default 150): all related pairs first, then sampled unrelated ones. Lower it on a small GPU. |
 | `--upcast` | PEFT's fp32 copies of embeddings and `lm_head`; off by default (an untied fp32 vocabulary of the 4B is about 3 GB). |
 | `--seed`, `--list-repeat` | Seed; extra copies of chunks that contain a list. |
@@ -418,6 +421,11 @@ relweave eval data/projects/gold_test/test.jsonl runs/projects/test.jsonl --sche
 
 The metric is strict typed relation F1: a predicted relation counts only if both endpoints align to gold entities (by
 mention-span overlap and type), and the type and direction match.
+
+**With little data, start from the generator alone.** The head needs far more labelled chunks than the generator: in
+the dry run (110 training records) the generator reached 0.83 and the head scored every pair below the default cut, so
+the union at cut -2 vetoed almost everything (0.08); at cut -12 the union equals the generator. Use the head only once
+the union beats the generator alone on validation (on the business schema, about 3,000 training chunks, it added +0.10).
 
 How to read it:
 
