@@ -17,7 +17,7 @@ example); every step works, and its lessons are written into it.
 | new relation types between Person, Org and Place | reads only its 21 trained types | labels and training (recipe-own-schema), or the zero-shot adapter for a first look |
 | new entity types (products, genes, contracts, ...) | writes only its 6 trained entity types | labels and training; nothing zero-shot covers new entity types |
 | non-prose text | trained almost only on prose | text preparation (section 3) and training documents in the same layout |
-| long documents | reads 200-word chunks and merges them | usually nothing; see section 4 |
+| long documents | reads 200-word chunks and merges them | usually nothing; see section 6 |
 
 The zero-shot adapter (relweave-4b-zeroshot) reads a relation type's definition at run time: 0.65-0.71 F1 end to end
 on new relation types in four domains, 0.50-0.56 on held-out Re-DocRED types. It does not add entity types. Use it to
@@ -69,7 +69,7 @@ Other measurements:
 - In prose, relations written before a name without a verb are the model's weakest (titles before a name 0.43,
   modifiers 0.37, possessives 0.45 recall, against 0.68-0.79 for verbs, appositives and prepositions).
 
-## Adding new entity and relation types
+## 4. Adding new entity and relation types
 
 New types need labelled data and training; nothing in relweave-4b-base reads a new entity type. The plan that the
 dry run tested, with costs for one domain:
@@ -88,7 +88,7 @@ A model that reads any types at run time, without retraining, is a different pro
 schemas (dozens or more), so that the model can only succeed by reading the definitions. Training on one schema with
 its types renamed or dropped did not teach that here (a wrong definition moved 2 of 58 decisions).
 
-## Other languages and unusual domains
+## 5. Other languages and unusual domains
 
 - **Translate first** when an upstream translation step exists: the English model then needs no new training for
   types it already knows. Keep proper names in the original language in the translation (agencies, laws, inquiry
@@ -115,7 +115,7 @@ its types renamed or dropped did not teach that here (a wrong definition moved 2
   only when the fine-tuned model still misreads the domain's names and terms. It needs millions of tokens of raw text
   and hours of GPU.
 
-## 4. Long documents
+## 6. Long documents
 
 relweave reads 200-word chunks with one paragraph of overlap and merges them into one graph per document (entities by
 name and mention, relations deduplicated). Measured:
@@ -128,14 +128,14 @@ name and mention, relations deduplicated). Measured:
 
 So long documents mostly need nothing beyond the default chunking. Train with chunks of the same size you run with.
 
-## 5. Labels
+## 7. Labels
 
 The model learns what the labels leave out. Settle one written convention for every hard case before labelling, run
 two blind passes and an adjudication, and audit completeness on a sample grouped by how the text writes each relation
 (recipe-own-schema, section 3). For non-prose text, label the relations the layout carries (a heading, list nesting, a
 table row, a key-value line), or the model will learn that layout carries none.
 
-## 6. Training
+## 8. Training
 
 - Start from the trained adapter (`--init-adapter`), one epoch, with a replay of the original training data so the
   model keeps what it has.
@@ -146,16 +146,16 @@ table row, a key-value line), or the model will learn that layout carries none.
   completing the labels of the whole training set (Re-DocRED: recall 0.32 to 0.69 on a re-labelled training set).
 - Write training examples that look like the text you will run on, in the same layout, with the same conventions.
 
-## 7. Settings at run time
+## 9. Settings at run time
 
 - `cut` (pair head veto of generated relations, default 0): stricter cuts trade recall for precision one for one.
 - `margin` (pair head adding relations the generator skipped, default +0.5): 0 adds a few true relations at a small
   precision cost (26 unseen documents: recall 0.63 to 0.66, precision 0.81 to 0.79, F1 +0.013, within noise). Lower it
   when recall matters more than precision.
 - `stop_bias` (decoding bias against closing a relation block): no measurable effect once chunks are merged.
-- Neither changes what the model has learned to leave out; recall that will not move needs training (section 8).
+- Neither changes what the model has learned to leave out; recall that will not move needs training (section 10).
 
-## 8. When recall will not move
+## 10. When recall will not move
 
 Find out where relations are lost before changing the data: is the entity missing, is the pair in one sentence but not
 linked, how is the relation written? Then probe the model's own answer at the place the missing line belongs: if the
