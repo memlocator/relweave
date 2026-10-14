@@ -235,13 +235,24 @@ class SchemaBound:
         return tuple(sorted({a for e in self.schema.edge_names() for a in self.schema.attributes(e)}))
 
 
+# The answer's shape, spelled out for schemas without a worked example (only the business schema has one): without it
+# an annotator of a new schema had to guess the format (recipe dry run, 2026-10-14).
+JSON_SHAPE = """
+
+Answer shape (types from the lists above):
+{"entities": [{"id": "e1", "type": "<entity type>", "name": "<fullest name>", "mentions": ["<verbatim string>", ...]}],
+ "relations": [{"type": "<RELATION_TYPE>", "source": "e1", "target": "e2", "attributes": {},
+                "modality": "asserted" | "negated" | "hedged" | "reported", "evidence": "<verbatim sentence>"}]}"""
+
+
 class JsonFormat(SchemaBound):
     name = "json"
 
     def system_prompt(self) -> str:
+        shape = "" if self.schema.name == BUSINESS.name else JSON_SHAPE  # the business prompt shows it by example
         return (PREAMBLE + " Output only JSON that matches the schema; 'mentions' is the list of "
                 "surface strings and 'evidence' quotes the supporting sentence verbatim.\n\n"
-                + schema_description(self.schema))
+                + schema_description(self.schema) + shape)
 
     def render_input(self, text: str) -> str:
         return f"Text:\n{text}\n\nJSON:"
