@@ -93,6 +93,19 @@ its types renamed or dropped did not teach that here (a wrong definition moved 2
 - **Translate first** when an upstream translation step exists: the English model then needs no new training for
   types it already knows. Keep proper names in the original language in the translation (agencies, laws, inquiry
   names), so the graph's names can be traced back to the source text.
+- **Translation rules for extraction.** What the translator does decides what the extractor can find. Instruct it
+  (and check a sample) to:
+  1. keep proper names exactly as written in the source: people, organisations, agencies, places, names of laws,
+     reports and inquiries; no glosses in brackets (a second string makes a second entity);
+  2. render every term the same way throughout a document (variants become separate entities);
+  3. translate titles and roles, and keep them next to the name as in the source ("director-general Charlotte
+     Ingvar-Nilsson");
+  4. keep the layout: line breaks, headings, lists, and tables one row per line (raw rows read at 0.97, rewritten
+     rows at 0.20);
+  5. translate sentence for sentence, so evidence maps back to the source;
+  6. add and drop nothing: numbers, dates, footnote marks, and hedges such as "alleged" or "according to" (claims
+     read as facts are already a sixth of the model's errors).
+  [The effect of rule 1 is being measured: the same reports translated with and without it.]
 - **Train in the language** when the original names must be kept or translation is unavailable: the base model
   (Qwen3) is multilingual, so labelled chunks in that language (route above) are the main cost.
 - **Continued pre-training** on unlabelled text of the domain or language (domain-adaptive pre-training) comes last:
