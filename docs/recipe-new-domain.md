@@ -146,8 +146,11 @@ table row, a key-value line), or the model will learn that layout carries none.
 ## 7. Settings at run time
 
 - `cut` (pair head veto of generated relations, default 0): stricter cuts trade recall for precision one for one.
-- `margin` (pair head adding relations the generator skipped, default +0.5): [result of the margin test goes here].
-- `stop_bias` (decoding bias against closing a relation block): [result goes here].
+- `margin` (pair head adding relations the generator skipped, default +0.5): 0 adds a few true relations at a small
+  precision cost (26 unseen documents: recall 0.63 to 0.66, precision 0.81 to 0.79, F1 +0.013, within noise). Lower it
+  when recall matters more than precision.
+- `stop_bias` (decoding bias against closing a relation block): no measurable effect once chunks are merged.
+- Neither changes what the model has learned to leave out; recall that will not move needs training (section 8).
 
 ## 8. When recall will not move
 
