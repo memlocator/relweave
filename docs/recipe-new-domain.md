@@ -105,7 +105,10 @@ its types renamed or dropped did not teach that here (a wrong definition moved 2
   5. translate sentence for sentence, so evidence maps back to the source;
   6. add and drop nothing: numbers, dates, footnote marks, and hedges such as "alleged" or "according to" (claims
      read as facts are already a sixth of the model's errors).
-  [The effect of rule 1 is being measured: the same reports translated with and without it.]
+  Measured on six Swedish government-report excerpts with a business-schema model, both judges agreeing: names kept,
+  41 true relations (precision 0.87); names translated, 39 (0.83); the Swedish original read directly, 29 (0.88).
+  Translating gained about 40% more true relations. Keeping names cost nothing and keeps the graph traceable to the
+  source; the difference between the two translations is within noise.
 - **Train in the language** when the original names must be kept or translation is unavailable: the base model
   (Qwen3) is multilingual, so labelled chunks in that language (route above) are the main cost.
 - **Continued pre-training** on unlabelled text of the domain or language (domain-adaptive pre-training) comes last:
