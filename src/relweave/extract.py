@@ -35,6 +35,15 @@ def resolve_weights(spec: str | Path) -> Path:
     return Path(snapshot_download(str(spec), allow_patterns=["generator/*", "head/*", "schema.json", "README.md"]))
 
 
+def resolve_head(spec: str | Path) -> Path:
+    """A pair head: a local directory as it is, or a Hub repository id whose head/ directory (or root) holds it."""
+    if Path(spec).is_dir():
+        return Path(spec)
+    from huggingface_hub import snapshot_download
+    root = Path(snapshot_download(str(spec), allow_patterns=["head/*", "README.md"]))
+    return root / "head" if (root / "head").is_dir() else root
+
+
 def generator_settings(generator_dir: str | Path) -> dict:
     """The generator's prompt and schema settings: relweave_config.json in the directory (exported layout), else a
     training run's train_summary.json (next to adapter/, or beside the adapter files)."""

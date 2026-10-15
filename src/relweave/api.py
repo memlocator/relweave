@@ -52,13 +52,15 @@ class Extractor:
 
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
-                 max_words: int = MAX_WORDS, dense_words: int | None = DENSE_WORDS, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
+                 max_words: int = MAX_WORDS, dense_words: int | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
         from relweave import extract as ex
-        self.max_words, self.dense_words, self.batch_size = max_words, dense_words or None, batch_size
+        self.max_words, self.batch_size = max_words, batch_size
         self.keep_unnamed = keep_unnamed
+        if head is not None and not zeroshot:
+            head = ex.resolve_head(head)  # a local directory or a Hub repository id
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
@@ -82,6 +84,10 @@ class Extractor:
             self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
                                          generator_url=generator_url)
             self.schema = self._ce.schema
+        if dense_words is None:  # the head says which chunk size it was trained to read tables and lists in
+            cfg = getattr(self._ce, "head_config", None) or {}
+            dense_words = cfg.get("chunking", {}).get("dense_words", DENSE_WORDS)
+        self.dense_words = dense_words or None  # 0: tables and lists chunked as prose
         if sequential is None:
             import torch
             # both parts resident: generator about 3.6 GB plus head or zero-shot adapter about 3.4 GB, plus activations

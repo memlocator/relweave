@@ -206,3 +206,8 @@ def test_carry_forward_generates_in_rounds_with_each_documents_own_known_entitie
     assert len(gen) == 3 and len(seen) == 2
     assert all(known == "" for _, known in seen[0])  # first round: nothing known yet
     assert seen[1] == [("0:1", "E1 Org: Acme0")]  # document 0's own entity, not document 1's
+
+
+def test_resolve_head_keeps_a_local_directory(tmp_path):
+    from relweave.extract import resolve_head
+    assert resolve_head(tmp_path) == tmp_path

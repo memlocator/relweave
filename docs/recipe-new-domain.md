@@ -86,6 +86,14 @@ that introduces a list (`--dense-words`, 0 turns this off). On real cabinet page
 60 names; prose is chunked as before. One long comma-separated sentence cannot be split, and past 40 entities in one
 chunk the output cap cuts it. A relation stated only by a table column still needs training on that layout.
 
+**Table head (experimental).** A pair head trained on table and list windows of up to 250 words with their header
+context (`--head chrullis/relweave-4b-head-tables`; it sets its own window size). On 5 real cabinet pages, judged:
+0.76 F1 against 0.65 for the base model with layout-aware chunks (paired +0.12, 95% +0.03 to +0.25), all of the gain
+in relations read from a column (party membership 0.68 to 0.88). Its training tables were modelled on that page
+layout, so test it on your own tables first; to train one for your layouts, continue the base head on labelled
+windows of your tables (`relweave train-head ... --base-head <head> --max-probes 300`, a 24 GB GPU, about 20 minutes
+for 600 windows) with a replay of prose chunks.
+
 Measured on written staff lists (gold by construction, every person EMPLOYED_BY a company; the shipped business model,
 untrained on the layout; `scripts/make_dense.py` in the project repo):
 

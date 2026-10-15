@@ -45,14 +45,14 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                           "(default: the one the generator was trained for)"),
         model: str | None = typer.Option(None, help="base model path or hub id"),
         generator: Path | None = typer.Option(None, help="generator directory, overriding the one in --weights"),
-        head: Path | None = typer.Option(None, help="pair head directory, overriding the one in --weights"),
+        head: str | None = typer.Option(None, help="pair head: a directory or a Hub repository id (e.g. a table head), overriding the one in --weights"),
         cut: float | None = typer.Option(None, help="drop a generator relation the head scores at or below this "
                                          "(default from the head's config, -2.0)"),
         margin: float | None = typer.Option(None, help="add a head relation scoring above this (default from the "
                                             "head's config, +0.5)"),
         batch_size: str = typer.Option("auto", help="chunks generated together: 1, 2, 4, 8 ... or auto"),
         max_words: int = typer.Option(MAX_WORDS, help="words per chunk"),
-        dense_words: int = typer.Option(DENSE_WORDS, help="words per chunk for tables and lists (0: chunk them as prose)"),
+        dense_words: int | None = typer.Option(None, help="words per chunk for tables and lists (default: the head's own setting, else 80; 0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
         generator_url: str | None = typer.Option(None, help="generate on this HTTP server (vLLM serving the merged "
                                                  "generator, e.g. http://localhost:8000); the head runs locally"),

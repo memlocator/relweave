@@ -18,6 +18,9 @@
 
 ### Added
 
+- `--head` (and `Extractor(head=...)`) takes a Hub repository id as well as a directory. A head's `head_config.json`
+  may set `chunking.dense_words`, the window size it reads tables and lists in; `--dense-words` overrides it.
+
 - `relweave judge`: pooled judging for any schema. `pool` builds the claims of the gold and each system with planted
   decoys, the judging brief rendered from the schema and a task file for each judge; `check` tests the judges (decoys
   rejected, agreement); `score` gives judged precision, pooled recall and F1 with a document-bootstrap interval, per
