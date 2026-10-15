@@ -97,10 +97,10 @@ def ingest(files: list[Path], out: Path, test_frac: float = 0.2, seed: int = 0, 
     with out.open("w") as fh:
         for f in files:
             text = f.read_text()
-            spans = (sentence_windows(text, max_chars, overlap_sentences) if max_chars
-                     else [(c.start, c.end) for c in chunk(text, max_words or MAX_WORDS)])
-            for k, (a, b) in enumerate(spans, 1):
-                fh.write(json.dumps({"chunk_id": f"{f.stem}#{k}", "doc_id": f.stem, "text": text[a:b], "gold": None,
+            pieces = ([text[a:b] for a, b in sentence_windows(text, max_chars, overlap_sentences)] if max_chars
+                      else [c.model_text for c in chunk(text, max_words or MAX_WORDS)])  # what the model will read
+            for k, piece in enumerate(pieces, 1):
+                fh.write(json.dumps({"chunk_id": f"{f.stem}#{k}", "doc_id": f.stem, "text": piece, "gold": None,
                                      "entity_map": {}, "split": "test" if f.stem in test_ids else "train"},
                                     ensure_ascii=False) + "\n")
                 n += 1

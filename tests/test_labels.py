@@ -137,7 +137,7 @@ def test_ingest_chunks_as_run_does(tmp_path):
     ingest([tmp_path / "d.txt"], tmp_path / "c.jsonl", test_frac=0)
     import json as _json
     got = [_json.loads(x)["text"] for x in (tmp_path / "c.jsonl").read_text().splitlines()]
-    assert got == [c.text for c in chunk(text)]
+    assert got == [c.model_text for c in chunk(text)]
 
 
 def test_import_counts_over_cap_labels(tmp_path):

@@ -110,7 +110,7 @@ class Extractor:
         ce = self._ce
         doc_ids = doc_ids or [f"document{k}" if len(texts) > 1 else "document" for k in range(len(texts))]
         chunked = [chunk(t, self.max_words) for t in texts]
-        items = [(f"{d}:{c.index}", c.text) for d, chunks in enumerate(chunked) for c in chunks]
+        items = [(f"{d}:{c.index}", c.model_text) for d, chunks in enumerate(chunked) for c in chunks]
         try:
             _load(ce.load_generator, "generator")
             generated = self._generate_carried(chunked) if self.carry else (
@@ -185,7 +185,7 @@ class Extractor:
         by_id = {e.id: e for e in r.output.entities}
         ents = [(e.name, e.type, list(dict.fromkeys([e.name] + list(by_id[e.id].mentions)))) for e in g.entities]
         try:
-            scored = self._zs.score_chunk(c.text, ents, self.schema)
+            scored = self._zs.score_chunk(c.model_text, ents, self.schema)
         except Exception as e:  # noqa: BLE001  one bad chunk must not lose the document
             g.warnings.append(f"chunk {c.index}: zero-shot scoring failed ({_why(e)}); no relations")
             return g

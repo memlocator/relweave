@@ -278,7 +278,7 @@ supplies the prompt settings and tokenizer."""
 
     def generate(self, chunk: Chunk):
         """The generator's ExtractionResult for one chunk (a batch of one)."""
-        return self.generate_many([(f"chunk{chunk.index}", chunk.text)], batch_size=1)[f"chunk{chunk.index}"]
+        return self.generate_many([(f"chunk{chunk.index}", chunk.model_text)], batch_size=1)[f"chunk{chunk.index}"]
 
     def auto_batch(self, items: list[tuple[str, str]]) -> int:
         """The largest of 1/2/4/8 whose key/value cache fits the free GPU memory, estimated from the longest prompt
@@ -358,7 +358,7 @@ supplies the prompt settings and tokenizer."""
         if len(types) < 2:
             return {}
         prompt = self.head_config.get("prompt", {})
-        pre = generation_prompt(tok, chat_messages(chunk.text, "sentences", compact=prompt.get("compact_prompt", True),
+        pre = generation_prompt(tok, chat_messages(chunk.model_text, "sentences", compact=prompt.get("compact_prompt", True),
                                                   schema=self.schema,
                                                   conditioned=prompt.get("conditioned", self.conditioned))) + ents
         every = [p for p in combinations(sorted(types), 2) if only is None or only in p]

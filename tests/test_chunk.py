@@ -133,3 +133,25 @@ def test_sentences_break_at_newlines():
     text = "Group functions\nThe group has a board. It meets.\n- Tor Amundsen\n- Hilde Lunde\nThey meet."
     parts = [text[a:b] for a, b in sentence_spans(text)]
     assert parts == ["Group functions", "The group has a board.", "It meets.", "- Tor Amundsen", "- Hilde Lunde", "They meet."]
+
+
+def test_dense_tables_chunk_small_with_header_context():
+    from relweave.chunk import DENSE_WORDS, chunk
+    rows = "\n".join(f"| Minister for Area{i} | Person{i} Name | 2022 | Party{i % 3} |" for i in range(60))
+    text = ("Intro paragraph about the cabinet. " * 5 + "\n\n## Ministers\n\n| Portfolio | Minister | Took office | Party |\n"
+            "|---|---|---|---|\n| Ministry of Justice |\n" + rows + "\n\nClosing prose paragraph here. " * 3)
+    cs = chunk(text)
+    assert all(text[c.start:c.end] == c.text for c in cs)
+    table = [c for c in cs if c.text.lstrip().startswith("|")]
+    assert len(table) > 2 and all(len(c.text.split()) <= DENSE_WORDS + 20 for c in table)
+    later = table[-1]
+    assert "## Ministers" in later.context and "| Portfolio | Minister |" in later.context
+    assert "| Ministry of Justice |" in later.context and later.model_text.endswith(later.text)
+    prose = [c for c in cs if not c.text.lstrip().startswith("|")]
+    assert all(c.context == "" for c in prose)
+
+
+def test_dense_off_keeps_old_chunking():
+    from relweave.chunk import chunk
+    rows = "\n".join(f"- Person{i} (Company{i})" for i in range(80))
+    assert len(chunk(rows, dense_words=None)) < len(chunk(rows))

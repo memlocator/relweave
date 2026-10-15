@@ -16,12 +16,25 @@ BLANK_LINES = re.compile(r"\n[ \t\r]*\n\s*")
 SENTENCE_END = re.compile(r"(?<=[.!?])[ \t]+(?=[A-Z\"'“‘\d])|[ \t]*\n\s*")
 
 
+# Dense layout (tables, lists, key-value lines) is chunked smaller: on staff tables the model read 0.96 F1 at 80-word
+# chunks against 0.65 at 200 (2026-10-15, data/dense), while prose keeps MAX_WORDS.
+DENSE_WORDS = 80
+LAYOUT_LINE = re.compile(r"^\s*(\||[-*\u2022]\s|\d+[.)]\s|(\*\*)?[A-Z][\w /&().-]{0,40}(\*\*)?:(\*\*)?\s)")
+HEADING_LINE = re.compile(r"^#{1,6}\s+\S")
+
+
 @dataclass(frozen=True)
 class Chunk:
     index: int
     text: str
     start: int  # character offsets into the document
     end: int
+    context: str = ""  # lines from before the chunk the model needs to read it (a table's header row, its heading)
+
+    @property
+    def model_text(self) -> str:
+        """What the model reads: the context lines, then the chunk. Mentions and evidence are still located in text."""
+        return f"{self.context}\n{self.text}" if self.context else self.text
 
 
 Span = tuple[int, int]
@@ -100,21 +113,89 @@ def _pack(text: str, units: list[Span], max_words: int) -> list[Span]:
     return out
 
 
-def chunk(text: str, max_words: int = MAX_WORDS) -> list[Chunk]:
+def _dense(text: str, span: Span) -> bool:
+    """A paragraph of at least three lines, most of them table rows, list items or key-value lines."""
+    lines = [x for x in text[span[0]:span[1]].split("\n") if x.strip()]
+    return len(lines) >= 3 and sum(bool(LAYOUT_LINE.match(x)) for x in lines) * 2 >= len(lines)
+
+
+def _lines(text: str, span: Span) -> list[Span]:
+    return [(span[0] + a, span[0] + b) for a, b in _split(text[span[0]:span[1]], re.compile(r"\n"))]
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _context(text: str, start: int) -> str:
+    """For a chunk starting at start: the nearest heading line above it and, when it starts inside a table, the
+    table's header row (and separator row) and the nearest one-cell group row above the chunk (a row such as
+    "| Ministry of Justice |" that names the group the following rows belong to)."""
+    before = text[:start].split("\n")
+    before = before[:-1]  # the last piece is empty (start at a line start) or the start of the chunk's own line
+    head = next((x for x in reversed(before) if HEADING_LINE.match(x)), "")
+    rows = []
+    line_end = text.find("\n", start)
+    own = text[start:line_end if line_end >= 0 else None]
+    if own.lstrip().startswith("|") and before and before[-1].lstrip().startswith("|"):
+        k = len(before) - 1
+        while k > 0 and before[k - 1].lstrip().startswith("|"):
+            k -= 1
+        table = before[k:]
+        rows.append(table[0])
+        if len(table) > 1 and set(table[1].replace("|", "").strip()) <= set("-: "):
+            rows.append(table[1])
+        group = next((x for x in reversed(table[1:]) if len([c for c in _cells(x) if c]) == 1
+                      and set(x.replace("|", "").strip()) - set("-: ")), "")
+        if group and group not in rows and not own.strip() == group.strip():
+            rows.append(group)
+    return "\n".join(x for x in (head, *rows) if x)
+
+
+def _join_layout_lines(text: str, paras: list[Span]) -> list[Span]:
+    """Join runs of one-line paragraphs that are layout lines (a table or list in text without blank lines, where
+    every line is its own paragraph) into one paragraph, so the run is recognised as dense."""
+    out: list[Span] = []
+    run: list[Span] = []
+    for p in paras + [None]:
+        if p is not None and "\n" not in text[p[0]:p[1]] and LAYOUT_LINE.match(text[p[0]:p[1]]):
+            run.append(p)
+            continue
+        if len(run) >= 3:
+            out.append((run[0][0], run[-1][1]))
+        else:
+            out.extend(run)
+        run = []
+        if p is not None:
+            out.append(p)
+    return out
+
+
+def chunk(text: str, max_words: int = MAX_WORDS, dense_words: int | None = DENSE_WORDS) -> list[Chunk]:
     """Chunks of whole paragraphs up to max_words words, one paragraph of overlap between neighbours. A paragraph
     longer than max_words is split at sentence boundaries into pieces of at most max_words (a single longer
-    sentence stays whole), overlapping by the last sentence."""
-    spans: list[Span] = []
+    sentence stays whole), overlapping by the last sentence. A dense paragraph (mostly table rows, list items or
+    key-value lines) is split at line ends into pieces of at most dense_words (None: as prose), and each of its
+    pieces carries the heading above it and, inside a table, the table's header row as context."""
+    spans: list[tuple[Span, bool]] = []
     run: list[Span] = []  # paragraphs not yet packed (short ones between long ones)
-    for p in paragraphs(text):
-        if _words(text, p) > max_words:
-            spans += _pack(text, run, max_words)
-            run = []
-            spans += _pack(text, _units(text, p, max_words), max_words)
+
+    def flush():
+        nonlocal run
+        spans.extend((s, False) for s in _pack(text, run, max_words))
+        run = []
+
+    for p in _join_layout_lines(text, paragraphs(text)) if dense_words else paragraphs(text):
+        if dense_words and _dense(text, p) and _words(text, p) > dense_words:
+            flush()
+            spans.extend((s, True) for s in _pack(text, _lines(text, p), dense_words))
+        elif _words(text, p) > max_words:
+            flush()
+            spans.extend((s, False) for s in _pack(text, _units(text, p, max_words), max_words))
         else:
             run.append(p)
-    spans += _pack(text, run, max_words)
-    return [Chunk(i, text[a:b], a, b) for i, (a, b) in enumerate(spans)]
+    flush()
+    return [Chunk(i, text[a:b], a, b, _context(text, a) if dense else "") for i, ((a, b), dense) in enumerate(spans)]
 
 
 def sentence_spans(text: str) -> list[Span]:

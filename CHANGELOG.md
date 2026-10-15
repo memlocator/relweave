@@ -4,6 +4,12 @@
 
 ### Changed
 
+- **Layout-aware chunking.** A paragraph that is mostly table rows, list items or key-value lines is cut into chunks
+  of at most `DENSE_WORDS` (80) words at line ends, and each such chunk carries context the model reads first: the
+  heading above it and, inside a table, the table's header row and the nearest one-cell group row ("| Ministry of
+  Justice |"). Prose keeps 200-word chunks. A chunk stays a verbatim slice of the document (offsets unchanged); the
+  model reads `Chunk.model_text`. Labelling (`relweave label ingest`) writes the same text, so training matches run
+  time. `chunk(..., dense_words=None)` gives the old behaviour.
 - **`relweave label ingest` chunks as `relweave run` does** (200 words, `--max-words`), not 4,000-character windows. The
   old default trained a model on chunks three times the size it reads, and dense chunks went over the per-chunk caps.
   `--max-chars` keeps the old chunking. The chunk size lives in one constant, `relweave.chunk.MAX_WORDS`.

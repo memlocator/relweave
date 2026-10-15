@@ -57,7 +57,8 @@ def test_zeroshot_relations_above_threshold_enter_the_graph():
 
     e = Extractor.__new__(Extractor)
     e._zs, e.threshold, e.schema = FakeZS(), {"DONATED_TO": 0.8}, CHARITY
-    chunk = types.SimpleNamespace(index=0, text=text, start=0, end=len(text))
+    from relweave.chunk import Chunk
+    chunk = Chunk(0, text, 0, len(text))
     g = e._zeroshot_graph(chunk, types.SimpleNamespace(output=out))
     assert [(r.type, r.source, r.target, r.origin) for r in g.relations] == [("DONATED_TO", "e1", "e2", "zeroshot")]
     assert g.relations[0].score == round(adjust(0.92, 2), 3)  # DONATED_TO asked on 2 pairs
@@ -99,7 +100,8 @@ def test_adding_relation_types_does_not_change_another_types_scores():
         types.SimpleNamespace(id="e1", type="Person", name="Ingrid", mentions=["Ingrid"], attributes={}),
         types.SimpleNamespace(id="e2", type="Org", name="Harbour Light", mentions=["Harbour Light"], attributes={})],
         relations=[])
-    chunk = types.SimpleNamespace(index=0, text=text, start=0, end=len(text))
+    from relweave.chunk import Chunk
+    chunk = Chunk(0, text, 0, len(text))
 
     def scores(extra):
         class FakeZS:
