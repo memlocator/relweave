@@ -95,6 +95,13 @@ model stops writing partway through a long list, and on bare lists it sometimes 
 `relweave label ingest` and `relweave run`), and train on chunks in the same layout; after training on its own expert
 lists the government model scored 0.94-0.98 on them.
 
+Training the layout, measured: one epoch from the shipped generator on 695 written list chunks (tables, bracket lists,
+key-value blocks, other names and companies) plus 800 of its own business training chunks, at the default 200 words.
+On the same test lists: tables 0.87-0.88 (recall 0.97, from 0.53-0.59), bracket lists 0.78-0.83 (recall 0.64-0.72,
+from 0.15-0.40). The model now writes every person; on the bracket lists the 40-entity cap then cut recall (hit in 3
+of 5 chunks of the 100-row list), so dense text needs smaller chunks even after training. Whether training on lists
+cost anything on prose was not measured (the run hit its time limit first).
+
 ## 4. Adding new entity and relation types
 
 New types need labelled data and training; nothing in relweave-4b-base reads a new entity type. The plan that the
