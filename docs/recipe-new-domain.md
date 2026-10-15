@@ -99,8 +99,10 @@ Training the layout, measured: one epoch from the shipped generator on 695 writt
 key-value blocks, other names and companies) plus 800 of its own business training chunks, at the default 200 words.
 On the same test lists: tables 0.87-0.88 (recall 0.97, from 0.53-0.59), bracket lists 0.78-0.83 (recall 0.64-0.72,
 from 0.15-0.40). The model now writes every person; on the bracket lists the 40-entity cap then cut recall (hit in 3
-of 5 chunks of the 100-row list), so dense text needs smaller chunks even after training. Whether training on lists
-cost anything on prose was not measured (the run hit its time limit first).
+of 5 chunks of the 100-row list), so dense text needs smaller chunks even after training. On 12 written markdown documents with
+prose, tables, bullets and key-value lines it cost nothing: F1 0.730 -> 0.742, sentences 0.73 -> 0.71 recall (one
+relation of 52), bullets 0.64 -> 0.82, tables and key-value unchanged, precision 0.78 both. The replay of the original
+training chunks is what keeps prose; keep it in any layout training.
 
 ## 4. Adding new entity and relation types
 
