@@ -56,7 +56,7 @@ One `.txt` per document in `texts/`. Text that is not prose (markdown, tables, C
 per line. Text in another language: translate first, keeping names as written (recipe-new-domain.md, section 5).
 
 ```bash
-relweave label ingest texts --out chunks.jsonl --max-chars 1200
+relweave label ingest texts --out chunks.jsonl   # chunks as `relweave run` reads them (200 words)
 relweave label split chunks.jsonl --schema mydomain --out . --val-frac 0.15 --test-frac 0.2
 # documents that belong together (volumes of one report, years of one company): --group '<regex on the document id>'
 ```

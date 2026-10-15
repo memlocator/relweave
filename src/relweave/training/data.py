@@ -80,10 +80,13 @@ def windows_for(records: list[dict], max_chars: int) -> list[dict]:
     return extra
 
 
-def ingest(files: list[Path], out: Path, test_frac: float = 0.2, seed: int = 0, max_chars: int = 4000,
-           overlap_sentences: int = 2) -> tuple[int, int]:
-    """Chunk plain-text documents into unlabelled chunk records (gold null) with a train/test split by document.
+def ingest(files: list[Path], out: Path, test_frac: float = 0.2, seed: int = 0, max_chars: int | None = None,
+           overlap_sentences: int = 2, max_words: int | None = None) -> tuple[int, int]:
+    """Chunk plain-text documents into unlabelled chunk records (gold null) with a train/test split by document. By
+    default with relweave.chunk.chunk at MAX_WORDS, the chunking `relweave run` applies, so the model is trained on
+    chunks like the ones it reads; MAX_CHARS instead gives sentence windows of that many characters.
     Returns (chunks written, test documents)."""
+    from relweave.chunk import MAX_WORDS, chunk
     import random
     rng = random.Random(seed)
     files = sorted(files)
@@ -94,7 +97,9 @@ def ingest(files: list[Path], out: Path, test_frac: float = 0.2, seed: int = 0, 
     with out.open("w") as fh:
         for f in files:
             text = f.read_text()
-            for k, (a, b) in enumerate(sentence_windows(text, max_chars, overlap_sentences), 1):
+            spans = (sentence_windows(text, max_chars, overlap_sentences) if max_chars
+                     else [(c.start, c.end) for c in chunk(text, max_words or MAX_WORDS)])
+            for k, (a, b) in enumerate(spans, 1):
                 fh.write(json.dumps({"chunk_id": f"{f.stem}#{k}", "doc_id": f.stem, "text": text[a:b], "gold": None,
                                      "entity_map": {}, "split": "test" if f.stem in test_ids else "train"},
                                     ensure_ascii=False) + "\n")

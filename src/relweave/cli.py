@@ -15,6 +15,7 @@ from pathlib import Path
 
 import typer
 
+from relweave.chunk import MAX_WORDS
 from relweave.zeroshot import DEFAULT_THRESHOLD
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -50,7 +51,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         margin: float | None = typer.Option(None, help="add a head relation scoring above this (default from the "
                                             "head's config, +0.5)"),
         batch_size: str = typer.Option("auto", help="chunks generated together: 1, 2, 4, 8 ... or auto"),
-        max_words: int = typer.Option(200, help="words per chunk"),
+        max_words: int = typer.Option(MAX_WORDS, help="words per chunk"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
         generator_url: str | None = typer.Option(None, help="generate on this HTTP server (vLLM serving the merged "
                                                  "generator, e.g. http://localhost:8000); the head runs locally"),
@@ -118,14 +119,19 @@ def _parts(weights: str | None, generator: Path | None, head: Path | None, need_
 def label_ingest(texts_dir: Path = typer.Argument(..., help="directory of plain-text documents (*.txt)"),
                  out: Path = typer.Option(..., help="unlabelled chunk file (JSONL)"),
                  test_frac: float = typer.Option(0.2, help="share of documents in the test split"),
-                 seed: int = 0, max_chars: int = typer.Option(4000, help="characters per chunk"),
+                 seed: int = 0,
+                 max_words: int = typer.Option(MAX_WORDS, help="words per chunk, as `relweave run` reads them (keep the "
+                                                               "two equal: a model reads best what it was trained on)"),
+                 max_chars: int | None = typer.Option(None, help="instead of --max-words: sentence windows of this "
+                                                                "many characters (the old chunking)"),
                  overlap_sentences: int = 2) -> None:
-    """Chunk a directory of documents into unlabelled chunks with a train/test split by document."""
+    """Chunk a directory of documents into unlabelled chunks with a train/test split by document, by default exactly
+    as `relweave run` chunks them."""
     from relweave.training.data import ingest
     files = sorted(texts_dir.glob("*.txt"))
     if not files:
         raise typer.BadParameter(f"no *.txt files in {texts_dir}")
-    n, n_test = ingest(files, out, test_frac, seed, max_chars, overlap_sentences)
+    n, n_test = ingest(files, out, test_frac, seed, max_chars, overlap_sentences, max_words)
     typer.echo(f"wrote {n} chunks from {len(files)} documents ({n_test} test docs) -> {out}")
 
 
@@ -195,7 +201,12 @@ def label_import(chunks: Path = typer.Argument(..., help="the chunk file the pro
     """Teacher answers to gold chunk files; anything unverifiable is dropped and counted."""
     from relweave.training.labels import import_labels
     c = import_labels(chunks, raw_dir, out, _schema(schema), train_windows, echo=typer.echo)
-    typer.echo(f"missing answers: {c['missing']}; unverifiable items dropped from labels: {c['dropped']}")
+    typer.echo(f"missing answers: {c['missing']}; unverifiable items dropped from labels: {c['dropped']}; "
+               f"chunks skipped: {c['skipped']}")
+    if c["over_cap"]:
+        typer.echo(f"WARNING: {c['over_cap']} chunks hold more entities or relations than the model writes per chunk "
+                   f"and were left out: chunk smaller (`relweave label ingest --max-words`, and the same --max-words "
+                   f"at run time), then label again", err=True)
 
 
 @label_app.command("draft")

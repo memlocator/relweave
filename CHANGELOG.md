@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- **`relweave label ingest` chunks as `relweave run` does** (200 words, `--max-words`), not 4,000-character windows. The
+  old default trained a model on chunks three times the size it reads, and dense chunks went over the per-chunk caps.
+  `--max-chars` keeps the old chunking. The chunk size lives in one constant, `relweave.chunk.MAX_WORDS`.
+- **`relweave label import` warns about over-cap chunks.** A label with more than 40 entities or relations was skipped
+  with a one-line note; it is now counted, and the command ends with a warning saying how many were left out.
+
 ### Added
 
 - `relweave judge`: pooled judging for any schema. `pool` builds the claims of the gold and each system with planted

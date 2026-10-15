@@ -127,13 +127,15 @@ Chunk and split by document:
 
 ```bash
 mkdir -p data/projects
-relweave label ingest data/projects/texts --out data/projects/chunks.jsonl \
-  --max-chars 1200 --test-frac 0.3 --seed 0
+relweave label ingest data/projects/texts --out data/projects/chunks.jsonl --test-frac 0.3 --seed 0
 ```
 
-Options: `--out`, `--test-frac` (share of documents held out, default 0.2), `--seed`, `--max-chars` (default 4000),
-`--overlap-sentences` (default 2). The business model was trained on chunks of about 1,000 characters, and `relweave`
-chunks at 200 words, so `--max-chars 1200` matches both. Keep chunks small enough to stay under 40 entities.
+Options: `--out`, `--test-frac` (share of documents held out, default 0.2), `--seed`, `--max-words` (default 200).
+By default the documents are chunked exactly as `relweave run` chunks them (200 words, one paragraph of overlap), the
+size the published models were trained on: train on the chunks you will run on. If you change `--max-words` here, pass
+the same `--max-words` to `relweave run`. A chunk may hold at most 40 entities and 40 relations (the model's output
+caps); `relweave label import` leaves out over-cap chunks and warns. For dense lists and tables, use smaller chunks.
+(`--max-chars` gives the older sentence windows of a fixed character count.)
 
 `relweave label split chunks.jsonl --schema projects --out data/projects` does the split below in one command (with
 `--group` to keep related documents on one side). By hand: `relweave label ingest` marks documents as `train` or `test`,
@@ -530,7 +532,7 @@ that contain lists (the 500 list-rich chunks of the business model are the reaso
 cheaply.
 
 **Entities missing or the 40-entity warning.** `graph.warnings` carries "hit the 40-entity cap". Use shorter chunks
-(`--max-chars`, `max_words`).
+(`--max-words`, the same for `relweave label ingest` and `relweave run`).
 
 **Invented relations.** The usual causes are entities that merely co-occur or share a neighbour. Check the per-type
 table in step 8 for the type that causes it. Tighten its definition with a "not X, that is Y" clause, relabel, and

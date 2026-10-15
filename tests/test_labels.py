@@ -127,3 +127,31 @@ def test_agent_task_fills_dirs_and_conventions(tmp_path):
     t = agent_task("p", "r", 7, "A head of unit is EMPLOYED_BY.")
     assert "There are 7 prompt files in p/*.json" in t and "r/<name>.txt" in t
     assert t.rstrip().endswith("A head of unit is EMPLOYED_BY.") and "Wallenberg" not in t
+
+
+def test_ingest_chunks_as_run_does(tmp_path):
+    from relweave.chunk import chunk
+    from relweave.training.data import ingest
+    text = "\n\n".join(f"Paragraph {i}. " + "word " * 60 for i in range(12))
+    (tmp_path / "d.txt").write_text(text)
+    ingest([tmp_path / "d.txt"], tmp_path / "c.jsonl", test_frac=0)
+    import json as _json
+    got = [_json.loads(x)["text"] for x in (tmp_path / "c.jsonl").read_text().splitlines()]
+    assert got == [c.text for c in chunk(text)]
+
+
+def test_import_counts_over_cap_labels(tmp_path):
+    import json as _json
+    from relweave.training.labels import import_labels
+    names = [f"Person{i} Lastname" for i in range(45)]
+    text = ", ".join(names) + " work here."
+    (tmp_path / "c.jsonl").write_text(_json.dumps({"chunk_id": "d#1", "doc_id": "d", "text": text, "gold": None,
+                                                   "entity_map": {}, "split": "train"}) + "\n")
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "d_1.txt").write_text(_json.dumps({"entities": [{"id": f"e{i}", "type": "Person", "name": n, "mentions": [n]}
+                                                           for i, n in enumerate(names)], "relations": []}))
+    from relweave.training.labels import safe_name
+    (raw / f"{safe_name('d#1')}.txt").write_text((raw / "d_1.txt").read_text())
+    c = import_labels(tmp_path / "c.jsonl", raw, tmp_path / "out", train_windows=0, echo=lambda *_: None)
+    assert c["skipped"] == 1 and c["over_cap"] == 1 and c["train"] == 0

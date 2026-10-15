@@ -15,6 +15,7 @@ from pathlib import Path
 
 from relweave.formats import chat_messages, finish
 from relweave.schema import Schema, load_schema
+from relweave.schema.output import MAX_ENTITIES_PER_CHUNK, MAX_RELATIONS_PER_CHUNK
 from relweave.training.data import windows_for
 
 
@@ -64,10 +65,11 @@ def import_labels(chunks_path: Path, raw_dir: Path, out: Path, schema: str | Sch
     "split", default train). Unverifiable mentions, evidence and illegal relations are dropped and counted.
     train_windows: also add each training chunk as sentence windows of this many characters (0: none).
     fix(output) -> (output, n_changed): an optional correction applied to every parsed answer.
-    Returns counts: missing, dropped, fixed and chunks per split."""
+    Returns counts: missing, dropped, fixed, skipped (unparseable), over_cap (of those, over the per-chunk caps) and
+    chunks per split."""
     sch = load_schema(schema)
     recs: dict[str, list] = {"train": [], "test": []}
-    missing = dropped = fixed = 0
+    missing = dropped = fixed = skipped = over_cap = 0
     for line in Path(chunks_path).read_text().splitlines():
         if not line.strip():
             continue
@@ -80,7 +82,12 @@ def import_labels(chunks_path: Path, raw_dir: Path, out: Path, schema: str | Sch
             continue
         r = finish(d["chunk_id"], d["text"], raw.read_text(), 0.0, schema=sch)
         if r.output is None:
-            echo(f"{d['chunk_id']}: label not parseable ({r.error}); skipped")
+            capped = "at most" in str(r.error)
+            over_cap += capped
+            skipped += 1
+            echo(f"{d['chunk_id']}: " + (f"more than {MAX_ENTITIES_PER_CHUNK} entities or {MAX_RELATIONS_PER_CHUNK} "
+                                         f"relations, over the per-chunk cap; skipped" if capped else
+                                         f"label not parseable ({r.error}); skipped"))
             continue
         dropped += r.unresolved_mentions + r.unresolved_evidence + r.illegal_relations + r.dropped_relations
         if fix is not None:
@@ -95,4 +102,5 @@ def import_labels(chunks_path: Path, raw_dir: Path, out: Path, schema: str | Sch
     for split, rows in recs.items():
         (out / f"{split}.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
         echo(f"{split}: {len(rows)} chunks -> {out / f'{split}.jsonl'}")
-    return {"missing": missing, "dropped": dropped, "fixed": fixed, **{k: len(v) for k, v in recs.items()}}
+    return {"missing": missing, "dropped": dropped, "fixed": fixed, "skipped": skipped, "over_cap": over_cap,
+            **{k: len(v) for k, v in recs.items()}}

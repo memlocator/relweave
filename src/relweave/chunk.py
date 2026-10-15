@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+MAX_WORDS = 200  # words per chunk: what the published models were trained on, at run time and for labelling
 BLANK_LINES = re.compile(r"\n[ \t\r]*\n\s*")
 # a sentence ends at . ! ? before a capital, quote or digit, and at any line break (headings and list items are
 # never glued to the next sentence)
@@ -99,7 +100,7 @@ def _pack(text: str, units: list[Span], max_words: int) -> list[Span]:
     return out
 
 
-def chunk(text: str, max_words: int = 200) -> list[Chunk]:
+def chunk(text: str, max_words: int = MAX_WORDS) -> list[Chunk]:
     """Chunks of whole paragraphs up to max_words words, one paragraph of overlap between neighbours. A paragraph
     longer than max_words is split at sentence boundaries into pieces of at most max_words (a single longer
     sentence stays whole), overlapping by the last sentence."""

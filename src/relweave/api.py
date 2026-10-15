@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
 
-from relweave.chunk import chunk
+from relweave.chunk import MAX_WORDS, chunk
 from relweave.graph import Graph
 from relweave.merge import merge
 from relweave.records import ChunkGraph
@@ -52,7 +52,7 @@ class Extractor:
 
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
-                 max_words: int = 200, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
+                 max_words: int = MAX_WORDS, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
