@@ -208,4 +208,5 @@ models Qwen3-4B and Qwen3-1.7B are Apache 2.0. Details: `docs/methodology.md`, S
 - Training and evaluation data: https://huggingface.co/datasets/chrullis/relweave-business-data (CC BY-SA 4.0)
 - Methodology: `docs/methodology.md`
 - A new domain, step by step (schema, labels by agents, training, scoring by judges): `docs/quickstart-new-domain.md`
+- What a result on a new domain must pass before it is reported: `docs/evaluation-standards.md`
 - Training on your own schema: `docs/recipe-own-schema.md`

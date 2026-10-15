@@ -3,7 +3,8 @@
 Step by step, for a person or an agent: your own entity and relation types, your own documents, labels made by
 language-model agents, training, and scoring by judges. Every step is a command; every step ends with a check. The
 reasons behind the steps are in [recipe-new-domain.md](recipe-new-domain.md); the details of each command are in
-[recipe-own-schema.md](recipe-own-schema.md).
+[recipe-own-schema.md](recipe-own-schema.md). Before you report a result, check it against
+[evaluation-standards.md](evaluation-standards.md).
 
 Worked through once on Swedish government reports (new types Inquiry and Report, ten relation types): judged F1 0.92,
 level with two labelling passes (recipe-new-domain.md, section 11).
