@@ -357,6 +357,14 @@ def judge_export(results: Path = typer.Argument(..., help="`relweave generate` o
     typer.echo(f"{judge.export(results, out, chunks, scores, cut, margin)} relations -> {out}")
 
 
+@judge_app.command("graphs")
+def judge_graphs(graphs: list[Path] = typer.Argument(..., help="graph JSON files from `relweave run` (one per document)"),
+                 out: Path = typer.Option(..., help="labels file to write")) -> None:
+    """Whole-document graphs from `relweave run` as a labels file for a pool (long documents, scored per document)."""
+    from relweave import judge
+    typer.echo(f"{judge.labels_from_graphs(graphs, out)} relations from {len(graphs)} documents -> {out}")
+
+
 @judge_app.command("gold")
 def judge_gold(chunks: Path = typer.Argument(..., help="labelled chunk file"),
                out: Path = typer.Argument(..., help="labels file to write"),

@@ -395,3 +395,21 @@ def labels_from_chunks(chunks: str | Path, out: str | Path) -> int:
                 {"name": e["name"], "type": e["type"], "mentions": e.get("mentions") or [e["name"]]} for e in g["entities"]],
                 "relations": rels}, ensure_ascii=False) + "\n")
     return n
+
+
+def labels_from_graphs(graphs: list[str | Path], out: str | Path) -> int:
+    """Document graphs written by `relweave run` (JSON Graph Format) as a labels file, one record per document: how a
+    whole long document, chunked and merged, enters a pool. Asserted relations only. Returns the relation count."""
+    from relweave.graph import Graph
+    n = 0
+    with open(out, "w") as w:
+        for p in sorted(map(Path, graphs)):
+            g = Graph.from_json(p.read_text())
+            name = {e.id: e.name for e in g.entities}
+            rels = [{"source": name[r.source], "type": r.type, "target": name[r.target]} for r in g.relations
+                    if r.modality == "asserted" and r.source in name and r.target in name]
+            n += len(rels)
+            w.write(json.dumps({"id": g.document.get("id", p.stem), "text": g.text, "entities": [
+                {"name": e.name, "type": e.type, "mentions": list(dict.fromkeys([e.name, *(m.text for m in e.mentions)]))}
+                for e in g.entities], "relations": rels}, ensure_ascii=False) + "\n")
+    return n

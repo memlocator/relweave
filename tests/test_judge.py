@@ -116,3 +116,23 @@ def test_brief_renders_schema_definitions():
 def test_neighbour_types_share_endpoints():
     near = judge.neighbour_types(BUSINESS)
     assert "EMPLOYED_BY" in near["EXECUTIVE_OF"] and "EXECUTIVE_OF" not in near["EXECUTIVE_OF"]
+
+
+def test_labels_from_graphs(tmp_path):
+    jgf = {"graph": {"id": "doc7", "label": "doc7", "directed": True, "type": "relweave",
+                     "metadata": {"text": TEXT, "chunks": []},
+                     "nodes": {"e1": {"label": "Anna Berg", "metadata": {"kind": "entity", "type": "Person", "mentions": [
+                         {"text": "Anna Berg", "start": 0, "end": 9, "chunk": 0}]}},
+                               "e2": {"label": "Acme", "metadata": {"kind": "entity", "type": "Org", "mentions": [
+                                   {"text": "Acme", "start": 32, "end": 36, "chunk": 0}, {"text": "The firm", "start": 59, "end": 67, "chunk": 1}]}},
+                               "doc": {"label": "doc7", "metadata": {"kind": "document"}}},
+                     "edges": [{"id": "r1", "source": "e1", "target": "e2", "relation": "EXECUTIVE_OF",
+                                "metadata": {"kind": "relation", "modality": "asserted"}},
+                               {"id": "r2", "source": "e1", "target": "e2", "relation": "FOUNDED",
+                                "metadata": {"kind": "relation", "modality": "negated"}}]}}
+    (tmp_path / "doc7.json").write_text(json.dumps(jgf))
+    assert judge.labels_from_graphs([tmp_path / "doc7.json"], tmp_path / "out.jsonl") == 1
+    rec = json.loads((tmp_path / "out.jsonl").read_text())
+    assert rec["id"] == "doc7" and rec["text"] == TEXT
+    assert rec["relations"] == [{"source": "Anna Berg", "type": "EXECUTIVE_OF", "target": "Acme"}]
+    assert {"Acme", "The firm"} == set(next(e for e in rec["entities"] if e["name"] == "Acme")["mentions"])
