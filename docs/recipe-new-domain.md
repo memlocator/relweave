@@ -77,6 +77,24 @@ Other measurements:
 - In prose, relations written before a name without a verb are the model's weakest (titles before a name 0.43,
   modifiers 0.37, possessives 0.45 recall, against 0.68-0.79 for verbs, appositives and prepositions).
 
+### Dense lists and tables
+
+Measured on written staff lists (gold by construction, every person EMPLOYED_BY a company; the shipped business model,
+untrained on the layout; `scripts/make_dense.py` in the project repo):
+
+| layout, rows | 200-word chunks (default) | 80-word chunks |
+|---|---|---|
+| markdown table, 40 | 0.65 (recall 0.53) | 0.96 |
+| markdown table, 100 | 0.66 (0.59) | 0.96 |
+| "- Name (Company)" list, 40 | 0.26 (0.15) | 0.90 |
+| "- Name (Company)" list, 100 | 0.56 (0.40) | 0.64 |
+
+Precision stays at 0.76-1.00; recall is what collapses, long before the 40-entity cap (hit in one chunk of 24). The
+model stops writing partway through a long list, and on bare lists it sometimes writes nothing for a whole chunk (4 of
+9 chunks of the 100-row list at 80 words). For dense lists and tables: chunk smaller (`--max-words 80` for both
+`relweave label ingest` and `relweave run`), and train on chunks in the same layout; after training on its own expert
+lists the government model scored 0.94-0.98 on them.
+
 ## 4. Adding new entity and relation types
 
 New types need labelled data and training; nothing in relweave-4b-base reads a new entity type. The plan that the
