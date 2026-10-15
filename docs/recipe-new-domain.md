@@ -134,7 +134,14 @@ name and mention, relations deduplicated). Measured:
 - Relations of things never named ("the company", "she") are dropped by default (`keep_unnamed=True` keeps them).
 - A coreference pre-pass helps long back-reference narratives (0.57 to 0.75) and costs on encyclopaedic text (-0.02).
 
+Measured again in a new domain (Swedish government reports, translated; section 11): 11 whole documents of 900-4,700
+words, 283 chunks, labelled per document by two blind passes. Only 2 of 226 labelled relations had ends that never
+share a chunk (the model missed both); within chunks it found 87-91% of the labelled relations, as on short excerpts.
+Judged per document it scored 0.92 (precision 0.96), against 0.97 and 0.99 for the labelling passes, which read each
+document whole.
+
 So long documents mostly need nothing beyond the default chunking. Train with chunks of the same size you run with.
+Check how many of your relations cross chunks before building anything for them: in both domains it was a few percent.
 
 ## 7. Labels
 
@@ -214,6 +221,11 @@ Entities against the label files: Person 0.93, Inquiry 0.76-0.91, Org 0.73-0.86,
 - Pooled recall counts only relations some source found; the model's true recall is lower by an unmeasured amount.
   Labellers, judges and translators are all language models of one family, so their shared blind spots are not
   measured either. A human pass over a few documents would measure both.
-- The untrained model on this schema was not run, so the gain from training is not measured here.
+- The untrained model on this schema cannot be run: relweave refuses a generator on a schema it was not trained on
+  ("generator was trained on schema 'business', not 'govreports'"). Extending a schema is not zero-shot; new types
+  need training (the zero-shot adapter reads new relation definitions between Person, Org and Place only).
+- Whole documents (section 6): judged 0.92 against 0.97-0.99 for labellers reading the whole document; without the
+  expert lists 0.80 against 0.93-0.99. The model never wrote UNDER from a cover letter's "To the Minister and Head of
+  the Ministry of X" (0 of 10), a form rare in its training chunks.
 - The model was trained on labels written with the same convention as test pass A; it reaches the labellers' level on
   their convention, not on a reader's independent one.
