@@ -79,6 +79,13 @@ Other measurements:
 
 ### Dense lists and tables
 
+`relweave run` and `relweave label ingest` cut dense blocks (mostly table rows, list items or key-value lines) into
+80-word chunks that carry the heading above them, the table's header row, its nearest one-cell group row and the line
+that introduces a list (`--dense-words`, 0 turns this off). On real cabinet pages this took the shipped model from
+0.30-0.36 to 0.63-0.67 with no training, and on lists stated by a lead sentence from 0.30-0.55 to 0.82-0.97 recall at
+60 names; prose is chunked as before. One long comma-separated sentence cannot be split, and past 40 entities in one
+chunk the output cap cuts it. A relation stated only by a table column still needs training on that layout.
+
 Measured on written staff lists (gold by construction, every person EMPLOYED_BY a company; the shipped business model,
 untrained on the layout; `scripts/make_dense.py` in the project repo):
 
