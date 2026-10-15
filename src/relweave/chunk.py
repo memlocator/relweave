@@ -127,7 +127,15 @@ def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def _context(text: str, start: int) -> str:
+def _lead(text: str, block_start: int) -> str:
+    """The line introducing a dense block: the last non-empty line before it, when it ends with a colon ("The board
+    consists of:") and is not itself a list item or table row."""
+    prev = [x for x in text[:block_start].split("\n") if x.strip()]
+    line = prev[-1].strip() if prev else ""
+    return line if line.endswith(":") and not LAYOUT_LINE.match(line) else ""
+
+
+def _context(text: str, start: int, block_start: int | None = None) -> str:
     """For a chunk starting at start: the nearest heading line above it and, when it starts inside a table, the
     table's header row (and separator row) and the nearest one-cell group row above the chunk (a row such as
     "| Ministry of Justice |" that names the group the following rows belong to)."""
@@ -149,7 +157,10 @@ def _context(text: str, start: int) -> str:
                       and set(x.replace("|", "").strip()) - set("-: ")), "")
         if group and group not in rows and not own.strip() == group.strip():
             rows.append(group)
-    return "\n".join(x for x in (head, *rows) if x)
+    lead = _lead(text, block_start) if block_start is not None and not rows else ""
+    if lead and text[start:start + len(lead)] == lead:
+        lead = ""
+    return "\n".join(x for x in (head, lead, *rows) if x)
 
 
 def _join_layout_lines(text: str, paras: list[Span]) -> list[Span]:
@@ -176,26 +187,28 @@ def chunk(text: str, max_words: int = MAX_WORDS, dense_words: int | None = DENSE
     longer than max_words is split at sentence boundaries into pieces of at most max_words (a single longer
     sentence stays whole), overlapping by the last sentence. A dense paragraph (mostly table rows, list items or
     key-value lines) is split at line ends into pieces of at most dense_words (None: as prose), and each of its
-    pieces carries the heading above it and, inside a table, the table's header row as context."""
-    spans: list[tuple[Span, bool]] = []
+    pieces carries the heading above it, the line introducing a list ("... consists of:") and, inside a table, the
+    table's header row as context."""
+    spans: list[tuple[Span, int | None]] = []  # span, start of its dense block (None: prose)
     run: list[Span] = []  # paragraphs not yet packed (short ones between long ones)
 
     def flush():
         nonlocal run
-        spans.extend((s, False) for s in _pack(text, run, max_words))
+        spans.extend((s, None) for s in _pack(text, run, max_words))
         run = []
 
     for p in _join_layout_lines(text, paragraphs(text)) if dense_words else paragraphs(text):
         if dense_words and _dense(text, p) and _words(text, p) > dense_words:
             flush()
-            spans.extend((s, True) for s in _pack(text, _lines(text, p), dense_words))
+            spans.extend((s, p[0]) for s in _pack(text, _lines(text, p), dense_words))
         elif _words(text, p) > max_words:
             flush()
-            spans.extend((s, False) for s in _pack(text, _units(text, p, max_words), max_words))
+            spans.extend((s, None) for s in _pack(text, _units(text, p, max_words), max_words))
         else:
             run.append(p)
     flush()
-    return [Chunk(i, text[a:b], a, b, _context(text, a) if dense else "") for i, ((a, b), dense) in enumerate(spans)]
+    return [Chunk(i, text[a:b], a, b, _context(text, a, block) if block is not None else "")
+            for i, ((a, b), block) in enumerate(spans)]
 
 
 def sentence_spans(text: str) -> list[Span]:

@@ -155,3 +155,12 @@ def test_dense_off_keeps_old_chunking():
     from relweave.chunk import chunk
     rows = "\n".join(f"- Person{i} (Company{i})" for i in range(80))
     assert len(chunk(rows, dense_words=None)) < len(chunk(rows))
+
+
+def test_dense_list_chunks_carry_the_lead_line():
+    from relweave.chunk import chunk
+    lead = "The board of directors of Vestfold Granite Holdings ASA consists of the following members:"
+    text = lead + "\n\n" + "".join(f"- Person{i} Lastname{i}\n" for i in range(60))
+    cs = [c for c in chunk(text) if "- Person" in c.text]
+    assert len(cs) > 1 and all(lead in c.model_text for c in cs)
+    assert all(text[c.start:c.end] == c.text for c in chunk(text))
