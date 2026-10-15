@@ -26,7 +26,7 @@ command has `--help`.
 | GPU, generator training | One GPU with 8 GB or more. QLoRA training of the 4B generator peaked at 4.84 GB (the business run: 4-bit base, LoRA rank 32). |
 | GPU, head training | More than the generator. The head runs one forward pass per chunk with up to `--max-probes` packed probes. On a 24 GB L4 the business head used 200 probes. An 8 GB card fits only about 80 probes, which measurably hurt the business head. |
 | GPU, inference | 4-bit 4B base. About 3.6 GB per loaded model (generator and head), loaded one at a time below 9 GB free. |
-| time | Generator: the business run trained 10,765 examples for one epoch in 1.33 hours. A few hundred chunks for 2 to 3 epochs is minutes to an hour on a comparable GPU (an estimate from that rate, not a measurement). Head: not measured for a new schema; it runs one forward pass with up to 200 probes per example, so expect it to be slower per chunk than the generator. |
+| time | Generator: the business run trained 10,765 examples for one epoch in 1.33 hours. A few hundred chunks for 2 to 3 epochs is minutes to an hour on a comparable GPU (an estimate from that rate, not a measurement). Head, measured on the government-report schema (A10G): generating on the 540 training records it needs took 95 minutes (about 10 s per record), training the head 17 minutes; the generator's 3 epochs took 25 minutes. |
 | labelled data, starting point | A few hundred labelled chunks (about 1,200 characters each) from at least 10 to 20 documents, plus a validation set and a test set of 50 to 100 chunks each. |
 | labelled data, what helps | More chunks and more documents. The business model used about 2,900 labelled chunks plus 500 list-rich chunks, expanded to 10,765 training examples with sentence windows. The last 500 chunks added +0.003 validation F1, which is not significant: the curve had flattened there. No learning curve exists for a new schema. |
 | labeller | A large language model annotator (or human annotators) that follows written conventions. Budget is about 6,100 tokens per chunk from scratch. |
@@ -135,8 +135,9 @@ Options: `--out`, `--test-frac` (share of documents held out, default 0.2), `--s
 `--overlap-sentences` (default 2). The business model was trained on chunks of about 1,000 characters, and `relweave`
 chunks at 200 words, so `--max-chars 1200` matches both. Keep chunks small enough to stay under 40 entities.
 
-`relweave label ingest` marks documents as `train` or `test`, and writes `gold: null`. Split the held-out documents into
-validation and test, and tag every record with the schema name (the draft-correction step reads the `schema` field):
+`relweave label split chunks.jsonl --schema projects --out data/projects` does the split below in one command (with
+`--group` to keep related documents on one side). By hand: `relweave label ingest` marks documents as `train` or `test`,
+and writes `gold: null`. Split the held-out documents into validation and test, and tag every record with the schema name (the draft-correction step reads the `schema` field):
 
 ```python
 import json, pathlib, shutil
@@ -490,7 +491,7 @@ schema ..."). Without `schema=`, the extractor takes the generator's schema, whi
 If your validation and test labels were written by a language model, a relation the model under test writes that the
 gold lacks is not necessarily wrong: on our real documents a third of such "errors" were true facts the labels had
 stated at another level or type, or left out, and a fifth of the gold's own relations were not stated by the text.
-Score by pooled judging instead: collect every relation from the gold and from each system you compare, have two
+Score by pooled judging instead (`relweave judge`; the commands are in quickstart-new-domain.md, step 6): collect every relation from the gold and from each system you compare, have two
 independent judges decide each one against the text (true only with a verbatim quote, true only if both agree), and
 compute precision against that and recall against all judged-true relations of the pool (the gold is then a floor for
 recall, not the truth). Test the judges before trusting them: plant decoys (direction swapped, another entity of the

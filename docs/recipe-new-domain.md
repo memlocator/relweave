@@ -3,7 +3,8 @@
 New entity and relation types, text that is not prose (markdown, wiki and CMS dumps, notes, tables), and longer
 documents. This guide is the decision layer on top of [recipe-own-schema.md](recipe-own-schema.md), which has the
 commands for writing a schema, labelling, training the generator and the pair head, and evaluating. Read this one first
-to decide what to do and in which order; follow that one to do it.
+to decide what to do and in which order; follow that one to do it, or [quickstart-new-domain.md](quickstart-new-domain.md)
+for every step as a command.
 
 Everything below is either measured on the business schema (with the number) or marked as not yet measured.
 
@@ -44,7 +45,7 @@ Most of what we learned is that training on a guess fails and measuring first do
    relation definitions but adds no entity types); how low it scores there is not yet measured.
 4. **Report scores per type, and without the dominant type.** One easy, frequent relation can carry the headline: on
    the government reports, lists of appointed experts were 60% of the relations and scored 0.94-0.98, while HEADS
-   scored 0.4-0.5. Type-average F1 and F1 without the dominant type (`scripts/pool_by_type.py` in the project repo)
+   scored 0.4-0.5. Type-average F1 and F1 without the dominant type (`relweave judge score --without TYPE`)
    show what the headline hides. A type with no relation in the test set is untested, not passed.
 
 ## 3. Text that is not prose

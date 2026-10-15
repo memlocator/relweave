@@ -5,6 +5,7 @@
   relweave generate / score                         run the generator / the pair head over a chunk file
   relweave eval                                     score saved results against gold
   relweave train-generator / train-head             train both parts (pip install "relweave[train]")
+  relweave judge pool|check|score|...                pooled judging: score systems against the text
 """
 
 from __future__ import annotations
@@ -128,6 +129,23 @@ def label_ingest(texts_dir: Path = typer.Argument(..., help="directory of plain-
     typer.echo(f"wrote {n} chunks from {len(files)} documents ({n_test} test docs) -> {out}")
 
 
+@label_app.command("split")
+def label_split(chunks: Path = typer.Argument(..., help="chunk file from `relweave label ingest`"),
+                schema: str = typer.Option(..., help="schema name the records are tagged with (the NAME of module.py:NAME)"),
+                out: Path = typer.Option(..., help="directory for train_, val_ and test_unlabelled.jsonl"),
+                val_frac: float = 0.15, test_frac: float = 0.2, seed: int = 0,
+                group: str | None = typer.Option(None, help="regex on the document id: its match names a group kept "
+                                                           "on one side (e.g. '^[^_]+' for report_a, report_b)")) -> None:
+    """Split chunks into train, validation and test by document (or document group), tagged with the schema."""
+    from relweave.training.data import split
+    try:
+        r = split(chunks, out, schema, val_frac, test_frac, seed, group)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    for k, (d, c) in r.items():
+        typer.echo(f"{k:5} {d:4} documents {c:5} chunks -> {out}/{k}_unlabelled.jsonl")
+
+
 @label_app.command("prompts")
 def label_prompts(chunks: Path = typer.Argument(..., help="chunk file"),
                   out: Path = typer.Option(..., help="directory for one prompt file per chunk"),
@@ -146,6 +164,25 @@ def label_guide() -> None:
     """Print the labelling guide (prompt for an agent answering the prompt files, and the conventions)."""
     from relweave.training.labels import conventions_file
     typer.echo(conventions_file())
+
+
+@label_app.command("task")
+def label_task(prompt_dir: Path = typer.Argument(..., help="prompt directory from `relweave label prompts`"),
+               raw_dir: Path = typer.Argument(..., help="directory the labeller writes its answers to"),
+               conventions: Path | None = typer.Option(None, help="your domain's labelling conventions (text file)"),
+               out: Path | None = typer.Option(None, help="write the task here instead of printing it")) -> None:
+    """The task for a labelling agent on your own schema: domain-free rules plus your conventions."""
+    from relweave.training.labels import agent_task
+    n = len(list(prompt_dir.glob("*.json")))
+    if n == 0:
+        raise typer.BadParameter(f"no prompt files in {prompt_dir}")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    t = agent_task(prompt_dir, raw_dir, n, conventions.read_text() if conventions else "")
+    if out:
+        out.write_text(t)
+        typer.echo(f"task for {n} prompt files -> {out}")
+    else:
+        typer.echo(t)
 
 
 @label_app.command("import")
@@ -289,6 +326,145 @@ def train_head_cmd(chunks: list[Path] = typer.Argument(..., help="labelled train
     summary = train_head(chunks, out, generator, model or DEFAULT_MODEL, own_results, base_head, _schema(schema),
                          examples, max_probes, seed=seed, list_repeat=list_repeat, upcast=upcast, reserve_mb=reserve_mb)
     typer.echo(json.dumps({k: v for k, v in summary.items() if k != "labels"}, indent=1))
+
+
+# ------------------------------------------------------------------------------------------------------------
+# Pooled judging (relweave.judge)
+# ------------------------------------------------------------------------------------------------------------
+
+judge_app = typer.Typer(add_completion=False, no_args_is_help=True,
+                        help="Pooled judging: score systems by judges ruling each claim against the text.")
+app.add_typer(judge_app, name="judge")
+
+
+def _judges(judges: str) -> list[str]:
+    return [j for j in judges.split(",") if j]
+
+
+@judge_app.command("export")
+def judge_export(results: Path = typer.Argument(..., help="`relweave generate` output"),
+                 out: Path = typer.Argument(..., help="labels file to write"),
+                 chunks: Path | None = typer.Option(None, help="the chunk file generated on (adds text; needed for --scores)"),
+                 scores: Path | None = typer.Option(None, help="head scores: export the union instead of the generator"),
+                 cut: float | None = typer.Option(None, help="union cut"),
+                 margin: float | None = typer.Option(None, help="union margin"),
+                 schema: str | None = typer.Option(None, help=SCHEMA_HELP)) -> None:
+    """A system's output as a labels file for a pool."""
+    from relweave import judge
+    _schema(schema)
+    if scores is not None and chunks is None:
+        raise typer.BadParameter("--scores needs --chunks")
+    typer.echo(f"{judge.export(results, out, chunks, scores, cut, margin)} relations -> {out}")
+
+
+@judge_app.command("gold")
+def judge_gold(chunks: Path = typer.Argument(..., help="labelled chunk file"),
+               out: Path = typer.Argument(..., help="labels file to write"),
+               schema: str | None = typer.Option(None, help=SCHEMA_HELP)) -> None:
+    """A labelled chunk file as a labels file with text (a pool's gold)."""
+    from relweave import judge
+    _schema(schema)
+    typer.echo(f"{judge.labels_from_chunks(chunks, out)} relations -> {out}")
+
+
+@judge_app.command("pool")
+def judge_pool(out: Path = typer.Argument(..., help="pool directory"),
+               labels: list[str] = typer.Argument(..., help="NAME=labels.jsonl for the gold (named gold, records with "
+                                                            "text) and each system"),
+               schema: str | None = typer.Option(None, help=SCHEMA_HELP + " (decoy types and the brief)"),
+               decoys: int = typer.Option(2, help="decoys per document")) -> None:
+    """Build a pool, the judging brief and the judges' task: OUT/items.jsonl, key.jsonl, brief.md, task_<judge>.md."""
+    from relweave import judge
+    s = _schema(schema)
+    pairs = {}
+    for x in labels:
+        if "=" not in x:
+            raise typer.BadParameter(f"{x}: expected NAME=path")
+        n, p = x.split("=", 1)
+        pairs[n] = p
+    docs, claims = judge.items(out, pairs, s, decoys=decoys)
+    if s is not None:
+        (out / "brief.md").write_text(judge.brief(s))
+    for j in ("a", "b"):
+        (out / f"task_{j}.md").write_text(judge.judge_prompt(out / "brief.md", out / "items.jsonl",
+                                                             out / f"verdicts_{j}.jsonl"))
+    typer.echo(f"{docs} documents, {claims} claims -> {out}/items.jsonl\n"
+               f"Give {out}/task_a.md and {out}/task_b.md to two different judges (two models, or a model and a "
+               f"person), then: relweave judge check {out}")
+
+
+@judge_app.command("brief")
+def judge_brief(schema: str = typer.Argument(..., help=SCHEMA_HELP)) -> None:
+    """Print the judging brief of a schema."""
+    from relweave import judge
+    typer.echo(judge.brief(_schema(schema)))
+
+
+@judge_app.command("check")
+def judge_check(out: Path = typer.Argument(..., help="pool directory"),
+                judges: str = typer.Option("a,b", help="judge names, comma-separated (verdicts_<name>.jsonl)")) -> None:
+    """Decoys accepted per judge and the judges' disagreement: trust the scores only if both are low."""
+    from relweave import judge
+    r = judge.check(out, _judges(judges))
+    ok = True
+    for j, v in r["judges"].items():
+        rate = v["decoys_accepted"] / max(v["decoys"], 1)
+        ok &= rate <= 0.10
+        typer.echo(f"{j}: decoys accepted {v['decoys_accepted']}/{v['decoys']} ({rate:.0%}) {v['accepted_by_kind']}; "
+                   f"'true' without a verbatim quote: {v['no_quote']}")
+    if "disagreement" in r:
+        d, n = r["disagreement"]
+        ok &= d / max(n, 1) <= 0.15
+        typer.echo(f"disagreement {d}/{n} ({d / max(n, 1):.0%})")
+    typer.echo("judges usable" if ok else "judges NOT usable: a judge accepts over 10% of decoys or they disagree on "
+               "over 15%; sharpen the brief or change judge")
+
+
+@judge_app.command("score")
+def judge_score(out: Path = typer.Argument(..., help="pool directory"),
+                judges: str = typer.Option("a,b", help="judge names; a claim is true when all say true"),
+                without: str | None = typer.Option(None, help="also score without this relation type (the dominant one)")) -> None:
+    """Judged precision, pooled recall and F1 per source, then per relation type."""
+    from relweave import judge
+    js = _judges(judges)
+    r = judge.score(out, js)
+    typer.echo(f"pool: {r['claims']} claims, {r['true']} judged true by {' and '.join(js)}")
+    for n, v in r["sources"].items():
+        typer.echo(f"{n:12} wrote {v['wrote']:4}  true {v['true']:4}  precision {v['precision']:.2f}  pooled recall "
+                   f"{v['recall']:.2f}  F1 {v['f1']:.3f}  (95% {v['ci'][0]:.3f}-{v['ci'][1]:.3f}, document bootstrap)")
+    rows = judge.by_type(out, js, without)
+    names = list(r["sources"])
+    typer.echo(f"\n{'type':24}{'true':>6}" + "".join(f"{n:>14}" for n in names))
+    for t, v in rows.items():
+        typer.echo(f"{t:24}{v['true']:6}" + "".join(f"{v['sources'][n][0]:14.2f}" for n in names))
+    typer.echo("\nPooled recall counts only relations some source wrote; true recall is lower by an unmeasured amount.")
+
+
+@judge_app.command("pair")
+def judge_pair(out: Path = typer.Argument(..., help="pool directory"), a: str = typer.Argument(...),
+               b: str = typer.Argument(...), judges: str = typer.Option("a,b")) -> None:
+    """Paired document-bootstrap difference of judged F1, B minus A."""
+    from relweave import judge
+    d, lo, hi, n = judge.pair(out, a, b, _judges(judges))
+    typer.echo(f"{b} - {a}: {d:+.3f} (95% {lo:+.3f} to {hi:+.3f}, paired document bootstrap, {n} documents)")
+
+
+@judge_app.command("add")
+def judge_add(out: Path = typer.Argument(..., help="pool directory"),
+              label: str = typer.Argument(..., help="NAME=labels.jsonl of the system to add")) -> None:
+    """Add a system to a judged pool; only its new claims go to the judges (OUT/items_add.jsonl), then `merge`."""
+    from relweave import judge
+    n, p = label.split("=", 1)
+    typer.echo(f"{n}: {judge.add(out, n, p)} new claims -> {out}/items_add.jsonl; judge them into "
+               f"verdicts_add_<judge>.jsonl, then: relweave judge merge {out}")
+
+
+@judge_app.command("merge")
+def judge_merge(out: Path = typer.Argument(..., help="pool directory"), judges: str = typer.Option("a,b")) -> None:
+    """Fold verdicts_add_<judge>.jsonl into verdicts_<judge>.jsonl."""
+    from relweave import judge
+    judge.merge(out, _judges(judges))
+    typer.echo("merged")
 
 
 def main() -> None:

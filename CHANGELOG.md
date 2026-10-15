@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `relweave judge`: pooled judging for any schema. `pool` builds the claims of the gold and each system with planted
+  decoys, the judging brief rendered from the schema and a task file for each judge; `check` tests the judges (decoys
+  rejected, agreement); `score` gives judged precision, pooled recall and F1 with a document-bootstrap interval, per
+  source and per relation type (`--without` the dominant type); `pair` gives a paired difference; `add`/`merge` add a
+  system to a judged pool; `export` turns `relweave generate` output (or the union at a cut) into a labels file;
+  `gold` does the same for a labelled chunk file.
+- `relweave label split`: train, validation and test by document, with `--group` to keep related documents together.
+- `relweave label task`: the labelling agent's task for your own schema, domain-free rules plus your conventions.
+- `scripts/train_domain.sh`: training and validation of the generator and head in one run, with a timing estimate.
+- `docs/quickstart-new-domain.md`: a new domain step by step, every step a command with a check.
+
 ## 0.2.0
 
 Results differ from 0.1.x with the same input and settings: the default behaviour changed in the ways listed under

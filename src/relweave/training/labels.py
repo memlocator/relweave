@@ -27,6 +27,18 @@ def conventions_file() -> str:
     return files("relweave").joinpath("data/label_with_teacher.md").read_text()
 
 
+def agent_task(prompt_dir: str | Path, raw_dir: str | Path, n: int, conventions_text: str = "") -> str:
+    """The task for a labelling agent on a schema of your own: the domain-free rules (relweave/data/label_rules.md,
+    the business guide's rules without its business conventions) and your domain's conventions."""
+    rules = files("relweave").joinpath("data/label_rules.md").read_text()
+    rules = rules.replace("There are N", f"There are {n}").replace("<prompt dir>", str(prompt_dir)) \
+        .replace("<raw dir>", str(raw_dir))
+    conv = conventions_text.strip() or ("(No domain conventions given. Write down how to label the hard cases of your "
+                                        "types before labelling: who counts as a head, what a list implies, which "
+                                        "mentions are excluded.)")
+    return rules.rstrip() + "\n\nConventions for this domain:\n" + conv + "\n"
+
+
 def conventions() -> str:
     """The labelling conventions (the text between the --- lines of the guide), without its first paragraph, which
     is about the per-chunk prompt files."""

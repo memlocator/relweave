@@ -100,3 +100,31 @@ def ingest(files: list[Path], out: Path, test_frac: float = 0.2, seed: int = 0, 
                                     ensure_ascii=False) + "\n")
                 n += 1
     return n, len(test_ids)
+
+
+def split(chunks: Path, out_dir: Path, schema: str, val_frac: float = 0.15, test_frac: float = 0.2, seed: int = 0,
+          group: str | None = None) -> dict[str, tuple[int, int]]:
+    """Split a chunk file into OUT_DIR/{train,val,test}_unlabelled.jsonl by document, every record tagged with the
+    schema name. GROUP: a regular expression whose first match in the document id names a group kept on one side (the
+    volumes of one report, the years of one company), so no group spans the split. Returns split -> (documents,
+    chunks)."""
+    import random
+    import re
+    rows = [json.loads(x) for x in chunks.read_text().splitlines() if x.strip()]
+    key = (lambda d: (re.search(group, d) or [d])[0]) if group else (lambda d: d)
+    groups = sorted({key(r["doc_id"]) for r in rows})
+    rng = random.Random(seed)
+    rng.shuffle(groups)
+    n_test = max(1, round(len(groups) * test_frac))
+    n_val = max(1, round(len(groups) * val_frac))
+    if n_test + n_val >= len(groups):
+        raise ValueError(f"{len(groups)} documents (or groups) are too few for a train, validation and test split")
+    side = {g: "test" for g in groups[:n_test]} | {g: "val" for g in groups[n_test:n_test + n_val]}
+    out = {"train": [], "val": [], "test": []}
+    for r in rows:
+        name = side.get(key(r["doc_id"]), "train")
+        out[name].append({**r, "schema": schema, "split": "train" if name == "train" else "test"})
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, rs in out.items():
+        (out_dir / f"{name}_unlabelled.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rs))
+    return {k: (len({r["doc_id"] for r in v}), len(v)) for k, v in out.items()}

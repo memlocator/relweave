@@ -87,3 +87,43 @@ def test_training_windows_keep_a_non_business_schema(tmp_path):
     recs = [json.loads(line) for line in (tmp_path / "out" / "train.jsonl").read_text().splitlines()]
     window = next(x for x in recs if x["chunk_id"] != "d#0")
     assert window["schema"] == "politics" and window["gold"]["relations"][0]["type"] == "MEMBER_OF_PARTY"
+
+
+def test_split_by_document_group(tmp_path):
+    import json as _json
+    from relweave.training.data import split
+    rows = [{"chunk_id": f"{d}#{k}", "doc_id": d, "text": "x", "gold": None, "entity_map": {}, "split": "train"}
+            for d in ["r1a", "r1b", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9"] for k in (1, 2)]
+    src = tmp_path / "chunks.jsonl"
+    src.write_text("".join(_json.dumps(r) + "\n" for r in rows))
+    res = split(src, tmp_path / "out", "toy", val_frac=0.2, test_frac=0.2, group=r"^r\d")
+    sides = {}
+    for name in ("train", "val", "test"):
+        for line in (tmp_path / "out" / f"{name}_unlabelled.jsonl").read_text().splitlines():
+            r = _json.loads(line)
+            assert r["schema"] == "toy"
+            sides.setdefault(r["doc_id"][:2], set()).add(name)
+    assert all(len(v) == 1 for v in sides.values())  # r1a and r1b never split apart
+    assert sum(c for _, c in res.values()) == 20 and res["test"][1] > 0 and res["val"][1] > 0
+
+
+def test_domain_free_rules_are_the_guides_own():
+    """label_rules.md repeats the business guide's rules without its business conventions: every sentence of it must
+    still be in the guide, so the two cannot drift apart silently."""
+    import re
+    from importlib.resources import files
+    rules = files("relweave").joinpath("data/label_rules.md").read_text()
+    def norm(t):  # examples in brackets are domain-specific; the rule around them must match
+        return re.sub(r"\s+([.,;:])", r"\1", re.sub(r"\([^)]*\)", "", " ".join(t.split()))).replace("  ", " ")
+    guide = norm(files("relweave").joinpath("data/label_with_teacher.md").read_text())
+    for sent in re.split(r"(?<=[.;:])\s+", norm(rules)):
+        core = sent.strip()
+        if len(core) > 25 and "most specific" not in core and "unusual spaces" not in core:
+            assert core in guide, core
+
+
+def test_agent_task_fills_dirs_and_conventions(tmp_path):
+    from relweave.training.labels import agent_task
+    t = agent_task("p", "r", 7, "A head of unit is EMPLOYED_BY.")
+    assert "There are 7 prompt files in p/*.json" in t and "r/<name>.txt" in t
+    assert t.rstrip().endswith("A head of unit is EMPLOYED_BY.") and "Wallenberg" not in t
