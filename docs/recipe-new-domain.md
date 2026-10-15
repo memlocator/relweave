@@ -7,8 +7,10 @@ to decide what to do and in which order; follow that one to do it.
 
 Everything below is either measured on the business schema (with the number) or marked as not yet measured.
 
-**Status.** recipe-own-schema.md was run end to end on a new schema on 2026-10-14 (a toy set: its own `projects`
-example); every step works, and its lessons are written into it.
+**Status.** recipe-own-schema.md was run end to end on a new schema on 2026-10-14, first on a toy set (its own
+`projects` example), then on real text: Swedish government inquiry reports, translated, with new entity types (Inquiry,
+Report) and new relation types. The trained model reached the labellers' level on that domain (judged F1 0.92 against
+0.91 and 0.93 for two labelling passes); section 11 has the run, the scores per type and what it did not test.
 
 ## 1. What changes, and what it costs
 
@@ -37,8 +39,13 @@ Most of what we learned is that training on a guess fails and measuring first do
    against the text with a verbatim quote, plant decoys (wrong direction, wrong entity, wrong type, true-in-the-world
    but not in the text) and require that the judges reject almost all of them, and score every system in the same
    pool (recipe-own-schema, "When the gold itself is made by a model").
-3. **Run the base model first.** On new types it scores near zero by design; on new layouts and genres it tells you
-   how far the text itself is from what the model knows.
+3. **Run the base model first.** On new layouts and genres it tells you how far the text itself is from what the model
+   knows. On new types it cannot write them (it was trained on fixed type names; the zero-shot adapter reads new
+   relation definitions but adds no entity types); how low it scores there is not yet measured.
+4. **Report scores per type, and without the dominant type.** One easy, frequent relation can carry the headline: on
+   the government reports, lists of appointed experts were 60% of the relations and scored 0.94-0.98, while HEADS
+   scored 0.4-0.5. Type-average F1 and F1 without the dominant type (`scripts/pool_by_type.py` in the project repo)
+   show what the headline hides. A type with no relation in the test set is untested, not passed.
 
 ## 3. Text that is not prose
 
@@ -161,3 +168,51 @@ Find out where relations are lost before changing the data: is the entity missin
 linked, how is the relation written? Then probe the model's own answer at the place the missing line belongs: if the
 first token of the line is unlikely, the model has learned to stop there, and more examples of the same kind will not
 change it (recipe-own-schema, section 10).
+
+## 11. Worked example: Swedish government reports (2026-10-14)
+
+The full route on real text, with the pass mark fixed before any model output: judged F1 at least 0.65 and within 0.10
+of a single labelling pass.
+
+- **Text.** 40 inquiry reports (SOU) from the Riksdag's open data: the cover letter and the start of the summary,
+  translated to English by the translation rules of section 5 (names kept). Split by report, volumes of one report
+  together: 23 training, 4 validation, 8 test reports (199 / 33 / 92 chunks).
+- **Schema.** Person, Org, Inquiry, Report, Place; CHAIRS, APPOINTED_TO, HEADS, EMPLOYED_BY, UNDER, COMMISSIONED_BY,
+  SUBMITS, OWNS, SUBSIDIARY_OF, LOCATED_IN, each definition naming where its neighbours begin.
+- **Labels.** By language-model agents with a written convention; the test set twice, blind (the two passes agree at
+  F1 0.76); 540 training records (1,758 relations). A completeness audit of 30 training chunks found no false relation
+  of 160 and 12 missing.
+- **Training and cost.** The generator from relweave-4b-base (`--init-adapter`), 3 epochs: 25 minutes on an A10G. The
+  head needs the generator's output on every training record: 95 minutes, most of the run. The whole job took 2 h 50 min
+  (about $2.85 on Hugging Face Jobs). Time `relweave generate` on a few records first (about 10 s per chunk here).
+- **Generator or union.** Unlike the toy run, the head helped: on validation the union at cut -4 scored 0.95 against
+  0.91 for the generator alone, and it held on test (0.92-0.94 against 0.86-0.89 by the label files).
+- **Judged result** (test, 92 chunks, pool of both passes and the model, two judges agreeing on 97% of claims, 0 of 42
+  decoys accepted): model 0.92 (precision 0.95), pass A 0.91, pass B 0.93. Pass mark met.
+
+| relation | judged-true relations | model F1 |
+|---|---|---|
+| APPOINTED_TO | 230 | 0.94 |
+| EMPLOYED_BY | 102 | 0.94 |
+| CHAIRS | 14 | 0.88 |
+| SUBMITS | 11 | 0.95 |
+| COMMISSIONED_BY | 14 | 0.55 |
+| HEADS | 6 | 0.46 |
+| UNDER | 3 | 0.00 |
+| all but APPOINTED_TO | 150 | 0.88 |
+
+Entities against the label files: Person 0.93, Inquiry 0.76-0.91, Org 0.73-0.86, Report 0.48-0.65.
+
+**What this does not show.**
+- The headline rests on lists of appointed experts, a formulaic part of these reports. HEADS, COMMISSIONED_BY and UNDER
+  are weak or barely present; OWNS, SUBSIDIARY_OF, LOCATED_IN and the Place type do not occur in the test reports and
+  are untested.
+- Report is the weak entity type: laws and conventions written as Report although the definition excludes them, and
+  the two labelling passes disagreed on whether a page header "SOU 2026:18" is a mention. Sharpen a definition like
+  this before labelling, with examples of what is excluded.
+- Pooled recall counts only relations some source found; the model's true recall is lower by an unmeasured amount.
+  Labellers, judges and translators are all language models of one family, so their shared blind spots are not
+  measured either. A human pass over a few documents would measure both.
+- The untrained model on this schema was not run, so the gain from training is not measured here.
+- The model was trained on labels written with the same convention as test pass A; it reaches the labellers' level on
+  their convention, not on a reader's independent one.
