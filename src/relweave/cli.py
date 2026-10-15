@@ -15,7 +15,7 @@ from pathlib import Path
 
 import typer
 
-from relweave.chunk import MAX_WORDS
+from relweave.chunk import DENSE_WORDS, MAX_WORDS
 from relweave.zeroshot import DEFAULT_THRESHOLD
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -52,6 +52,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                             "head's config, +0.5)"),
         batch_size: str = typer.Option("auto", help="chunks generated together: 1, 2, 4, 8 ... or auto"),
         max_words: int = typer.Option(MAX_WORDS, help="words per chunk"),
+        dense_words: int = typer.Option(DENSE_WORDS, help="words per chunk for tables and lists (0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
         generator_url: str | None = typer.Option(None, help="generate on this HTTP server (vLLM serving the merged "
                                                  "generator, e.g. http://localhost:8000); the head runs locally"),
@@ -66,7 +67,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
     import relweave
     try:
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
-                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, reserve_mb=reserve_mb,
+                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, dense_words=dense_words, reserve_mb=reserve_mb,
                                 generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
                                 zeroshot_weights=zeroshot_weights, keep_unnamed=keep_unnamed)
         many = len(files) > 1
