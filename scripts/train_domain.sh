@@ -7,7 +7,7 @@
 #
 # Settings (environment): EPOCHS=3, LR=1e-4, MAX_PROBES=200 (head probes per chunk; about 80 fit an 8 GB card),
 # HEAD=1 (0 skips the head: the generator alone, about half the run time), BASE=chrullis/relweave-4b-base.
-# Writes runs/: the generator (gen/) and head (head/), outputs on validation and test, scores, one log per step,
+# Writes runs/: the generator (gen/), head (head/) and entity tagger (tagger/), outputs on validation and test, scores, one log per step,
 # and runs/summary.txt with the validation scores that decide between the generator alone and the union.
 set -uo pipefail
 SCHEMA=${1:?usage: train_domain.sh module.py:NAME}
@@ -40,6 +40,7 @@ if [ "$HEAD" = 1 ]; then
   step generate-train relweave generate gold_train/train.jsonl $S --generator runs/gen --out runs/own.jsonl || exit 1
   step train-head relweave train-head gold_train/train.jsonl $S --generator runs/gen --own-results runs/own.jsonl \
     --max-probes "$MAX_PROBES" --out runs/head || exit 1
+  step train-tagger relweave train-tagger gold_train/train.jsonl $S --head runs/head --out runs/tagger || true
   for s in val test; do
     step score-$s relweave score gold_$s/test.jsonl runs/$s.jsonl $S --generator runs/gen --head runs/head \
       --out runs/${s}_scores.json || exit 1

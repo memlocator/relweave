@@ -19,8 +19,15 @@ from pathlib import Path
 
 import torch
 
-TYPES = ("Person", "Org", "Place")
-TAGS = ("O",) + tuple(f"{p}-{t}" for t in TYPES for p in ("B", "I"))
+TYPES = ("Person", "Org", "Place")  # the business tagger's types; a tagger for another schema takes that schema's
+
+
+def tags_for(types) -> tuple[str, ...]:
+    """BIO tags for entity types: O, then B- and I- for each type."""
+    return ("O",) + tuple(f"{p}-{t}" for t in types for p in ("B", "I"))
+
+
+TAGS = tags_for(TYPES)
 WINDOW_WORDS = 300
 
 
@@ -58,13 +65,13 @@ def name_mentions(entity: dict) -> list[str]:
     return keep
 
 
-def encode(tok, text: str, gold_spans=None):
+def encode(tok, text: str, gold_spans=None, tags=TAGS):
     """Token ids of text twice, the positions of the second copy's tokens with their character spans in text, and
     (with gold_spans) their BIO tag ids."""
     full = text + "\n\n" + text
     off0 = len(text) + 2
     enc = tok(full, return_offsets_mapping=True, add_special_tokens=False)
-    pos, char, tags = [], [], []
+    pos, char, tag_ids = [], [], []
     for i, (a, b) in enumerate(enc["offset_mapping"]):
         if a < off0 or b <= a:
             continue
@@ -78,8 +85,8 @@ def encode(tok, text: str, gold_spans=None):
                     first = a + (len(text[a:b]) - len(text[a:b].lstrip())) <= s
                     tag = f"{'B' if first else 'I'}-{t}"
                     break
-            tags.append(TAGS.index(tag))
-    return enc["input_ids"], pos, char, tags
+            tag_ids.append(tags.index(tag))
+    return enc["input_ids"], pos, char, tag_ids
 
 
 def _word_end(text: str, b: int) -> int:
@@ -88,12 +95,12 @@ def _word_end(text: str, b: int) -> int:
     return b
 
 
-def decode(text: str, char, pred) -> list[tuple[int, int, str]]:
+def decode(text: str, char, pred, tags=TAGS) -> list[tuple[int, int, str]]:
     """Entity spans (start, end, type) from BIO tag ids over tokens with character spans; a span ending inside a word
     is extended to the word's end."""
     out, cur = [], None
     for (a, b), p in zip(char, pred):
-        tag = TAGS[p]
+        tag = tags[p]
         if tag.startswith("B-") or (tag.startswith("I-") and (cur is None or cur[2] != tag[2:])):
             if cur:
                 out.append(cur)
@@ -164,7 +171,7 @@ class EntityTagger:
                 continue
             with torch.no_grad():
                 pred = self.net(self._features(model, ids, pos)).argmax(-1).tolist()
-            found += [(w[a:b], t, off + a, off + b) for a, b, t in decode(w, char, pred)]
+            found += [(w[a:b], t, off + a, off + b) for a, b, t in decode(w, char, pred, self.tags)]
         return found
 
     def augment(self, model, tok, text: str, result):

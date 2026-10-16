@@ -104,6 +104,23 @@ and halves the run). On a rented GPU (a Hugging Face job, a cloud box), copy the
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
 
+## 5b. Train the entity tagger
+
+The generator lists each chunk's entities and can end the list early: in long lists and tables it loses names, and
+the pair head can only link names that were listed. The tagger tags every name of your schema's entity types in one
+pass. It reads your trained head's states, so it runs with the head (also when the generator is served by vLLM):
+
+```bash
+relweave train-tagger gold_train/train.jsonl --schema mydomain.py:MYDOMAIN --head runs/head --out runs/tagger
+```
+
+About 12 minutes for 2,700 chunks on an 8 GB GPU (the 4B stays frozen; only a small classifier trains). Your labels
+should list names, not pronouns ("it", "the company" are not tagged), and leave titles that are not entities (laws,
+reports, unless your schema makes them entities) unlabelled, or the tagger learns to tag them.
+
+Check: run the test set with and without `--entity-tagger runs/tagger` (step 6 pools both); keep it if it does not cost
+precision on your text. In list-heavy text it should raise entity recall clearly.
+
 ## 6. Score the test set by judges
 
 The label files are one labeller's reading; judges ruling each claim against the text score everyone, labellers
@@ -139,7 +156,7 @@ and include it in the pool as above.
 
 ```bash
 relweave run new_document.txt --out graph.json --generator runs/gen --head runs/head --schema mydomain.py:MYDOMAIN \
-  --cut -4   # the cut you chose on validation in step 5
+  --entity-tagger runs/tagger --cut -4   # the cut you chose on validation in step 5
 ```
 
 When it misses things, read recipe-new-domain.md section 10 before adding data: find where relations are lost first.

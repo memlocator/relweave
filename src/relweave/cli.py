@@ -4,7 +4,7 @@
   relweave label ingest|prompts|import|draft|correct  build labelled chunk files for your own schema
   relweave generate / score                         run the generator / the pair head over a chunk file
   relweave eval                                     score saved results against gold
-  relweave train-generator / train-head             train both parts (pip install "relweave[train]")
+  relweave train-generator / train-head / train-tagger   train the parts (pip install "relweave[train]")
   relweave judge pool|check|score|...                pooled judging: score systems against the text
 """
 
@@ -340,6 +340,34 @@ def train_head_cmd(chunks: list[Path] = typer.Argument(..., help="labelled train
     summary = train_head(chunks, out, generator, model or DEFAULT_MODEL, own_results, base_head, _schema(schema),
                          examples, max_probes, seed=seed, list_repeat=list_repeat, upcast=upcast, reserve_mb=reserve_mb)
     typer.echo(json.dumps({k: v for k, v in summary.items() if k != "labels"}, indent=1))
+
+
+@app.command("train-tagger")
+def train_tagger_cmd(chunks: list[Path] = typer.Argument(..., help="labelled training chunk files"),
+                     head: Path = typer.Option(..., help="your trained pair head (its states are read, so the tagger "
+                                                         "runs with the head, also when the generator is served)"),
+                     out: Path = typer.Option(..., help="tagger directory: tagger.pt, tagger_config.json"),
+                     schema: str | None = typer.Option(None, help=SCHEMA_HELP + " (its entity types are tagged; "
+                                                                  "default the business schema)"),
+                     types: str | None = typer.Option(None, help="comma-separated subset of the schema's entity types"),
+                     model: str | None = typer.Option(None, help="base model (default the 4-bit Qwen3-4B)"),
+                     epochs: int = 2, layers: str = typer.Option("-1,-14", help="hidden-state layers read"),
+                     seed: int = 0) -> None:
+    """Train an entity tagger: tags every name in one pass, so names a long list or table would lose still reach
+    the pair head (needs the train extra; about 12 minutes for 2,700 chunks on an 8 GB GPU)."""
+    from relweave.extract import DEFAULT_MODEL
+    from relweave.schema import BUSINESS
+    from relweave.training.tagger import train_tagger
+    sch = _schema(schema) or BUSINESS
+    all_types = list(sch.node_names())
+    chosen = [t.strip() for t in types.split(",")] if types else all_types
+    unknown = sorted(set(chosen) - set(all_types))
+    if unknown:
+        raise typer.BadParameter(f"types {unknown} are not in schema {sch.name} ({all_types})")
+    cfg = train_tagger(chunks, out, head, model or DEFAULT_MODEL, chosen, reads="head", epochs=epochs,
+                       layers=[int(x) for x in layers.split(",")], seed=seed, echo=typer.echo)
+    typer.echo(f"tagger for {', '.join(cfg['types'])} -> {out}; use it with: relweave run ... --head {head} "
+               f"--entity-tagger {out}")
 
 
 # ------------------------------------------------------------------------------------------------------------

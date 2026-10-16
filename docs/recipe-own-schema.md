@@ -392,6 +392,28 @@ joint stage is the one that matters. Stage 0 was not tried on a new schema.
 Out of memory: lower `--max-probes` (for example 80). Chunks that still fail are skipped and counted as `skipped_oom` in
 `train_summary.json`.
 
+## 7b. Train the entity tagger
+
+The generator writes each chunk's entities as a list and may end it early, so in long lists and table columns it
+leaves names out, and nothing later can recover a name that was never listed. The entity tagger tags every name in
+one pass (BERT-style, over the hidden states of your trained head; it reads each window twice so every token has seen
+the whole window). Its names are added to the generator's entity lines before the pair head scores pairs.
+
+```bash
+relweave train-tagger data/projects/gold_train/train.jsonl --schema projects.py:PROJECTS \
+  --head runs/projects/head --out runs/projects/tagger
+```
+
+Options: `--types` (a comma-separated subset of the schema's entity types; default all), `--epochs` (default 2),
+`--layers` (default `-1,-14`). The 4B stays frozen and only a small classifier trains: about 12 minutes for 2,700
+chunks on an 8 GB GPU. It learns from the entities' name mentions only (the name and mentions sharing a word with it),
+not pronouns or descriptions, so coreference stays with the generator.
+
+Use it with `--entity-tagger runs/projects/tagger` (step 9). Measured on the business model: entity recall in long
+lists and tables 0.96-1.00 against 0.78-0.92 for the generator, relation F1 +0.03 to +0.08 there, no measurable
+change on prose. Label titles that are not entities as nothing: a tagger trained on data that names "the inquiry" as
+an entity learned to tag "the" and "The".
+
 ## 8. Evaluate, per type
 
 Score the head on validation and test, then evaluate the generator alone and the union:

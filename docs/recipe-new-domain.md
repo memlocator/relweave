@@ -94,10 +94,11 @@ on written lists, lead-sentence lists and annual-report tables, relation F1 +0.0
 change on 26 unseen prose documents (judged, paired +0.005). It reads each chunk a second time (`--no-entity-tagger`
 for speed). On real translated reports it also tags law titles kept as names, which the schema does not count.
 
-For a new domain: the tagger's types are Person, Org and Place. For other entity types, train one on your labelled
-chunks with `scripts/entity_head.py` in the project repository (the 4B stays frozen; about 12 minutes on an 8 GB GPU
-for 2,700 chunks); label names, not pronouns (`relweave.tagger.name_mentions`), and leave titles that are not
-entities unlabelled in your data, or the tagger learns to tag them.
+For a new domain: the shipped tagger's types are Person, Org and Place, and it reads the business model's states.
+Train your own after your pair head (`relweave train-tagger`, recipe-own-schema.md step 7b, quickstart step 5b): it
+tags your schema's entity types over your head's states, runs with the head (also with a generator served by vLLM),
+and takes about 12 minutes for 2,700 chunks on an 8 GB GPU. Label names, not pronouns, and leave titles that are not
+entities unlabelled, or the tagger learns to tag them.
 
 **Table head (experimental).** A pair head trained on table and list windows of up to 250 words with their header
 context (`--head chrullis/relweave-4b-head-tables`; it sets its own window size). On 5 real cabinet pages, judged:

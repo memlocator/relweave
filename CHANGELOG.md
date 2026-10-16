@@ -24,6 +24,10 @@
 
 ### Added
 
+- `relweave train-tagger`: train an entity tagger for your own schema's entity types over your trained head's states
+  (it then runs with the head, also when the generator is served by vLLM). Recipe step 7b, quickstart step 5b, and a
+  step in scripts/train_domain.sh.
+
 - `--head` (and `Extractor(head=...)`) takes a Hub repository id as well as a directory. A head's `head_config.json`
   may set `chunking.dense_words`, the window size it reads tables and lists in; `--dense-words` overrides it.
 
