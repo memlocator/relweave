@@ -427,8 +427,7 @@ supplies the prompt settings and tokenizer."""
                         have.add((typ, frozenset((a, b))))
         if tried == 0 or ents == list(out.entities):
             return final
-        o = ExtractionOutput.model_validate({"entities": ents, "relations": rels[:un.MAX_RELATIONS_PER_CHUNK]},
-                                            context={"schema": self.schema})
+        o = ExtractionOutput.model_construct(entities=ents, relations=rels[:un.MAX_UNION_RELATIONS])  # see union.py
         return type(final)(chunk_id=final.chunk_id, raw=final.raw, output=o, fmt="sentences")
 
     def combine(self, chunk: Chunk, result, scores: dict[str, float]) -> ChunkGraph:

@@ -19,6 +19,9 @@ ALT_TYPES = True  # switchable for evaluation
 RETEST = True  # an unlinked entity is re-scored by the head as each other type (ChunkExtractor._try_other_types)
 RETEST_MAX = 4  # unlinked entities re-scored per chunk (each costs one head pass per other type)
 SWAP = ("Person", "Org", "Place")
+MAX_UNION_RELATIONS = 400  # relations per chunk after the head's additions. The generator's own cap (40, in its
+# decoding grammar) stops a looping model; the head scores pairs and cannot loop, and on a dense list the generator's
+# lines alone reach 40, so the shared cap blocked every relation of the names it had skipped (2026-10-16).
 
 
 def union(res: dict, scores: dict, cut: float = CUT, margin: float = MARGIN, schema: Schema | None = None) -> dict:
@@ -33,7 +36,7 @@ def union(res: dict, scores: dict, cut: float = CUT, margin: float = MARGIN, sch
         keep = [x for x in r.output.relations if s.get(f"{x.type} {x.source[1:]} {x.target[1:]}", -1e9) > cut]
         have = {(x.type, frozenset((x.source, x.target))) for x in keep}
         for key, v in sorted(s.items(), key=lambda kv: -kv[1]):
-            if len(keep) >= MAX_RELATIONS_PER_CHUNK or v <= margin:
+            if len(keep) >= MAX_UNION_RELATIONS or v <= margin:
                 break
             typ, a, b = key.split()
             a, b = f"e{a}", f"e{b}"
@@ -60,14 +63,15 @@ def union(res: dict, scores: dict, cut: float = CUT, margin: float = MARGIN, sch
                             found.append((v, typ, a, b))
                     if found and (best is None or max(found)[0] > best[0]):
                         best = (max(found)[0], alt, found)
-                if best and len(keep) < MAX_RELATIONS_PER_CHUNK:
+                if best and len(keep) < MAX_UNION_RELATIONS:
                     ents[k] = e.model_copy(update={"type": best[1]})
                     et[e.id] = best[1]
                     for v, typ, a, b in sorted(best[2], reverse=True):
-                        if len(keep) >= MAX_RELATIONS_PER_CHUNK or (typ, frozenset((a, b))) in have:
+                        if len(keep) >= MAX_UNION_RELATIONS or (typ, frozenset((a, b))) in have:
                             continue
                         keep.append(Relation(type=typ, source=a, target=b, evidence=""))
                         have.add((typ, frozenset((a, b))))
-        o = ExtractionOutput.model_validate({"entities": ents, "relations": keep}, context={"schema": schema})
+        # every relation was checked for legality above; the output caps belong to the generator, not the union
+        o = ExtractionOutput.model_construct(entities=ents, relations=keep)
         out[cid] = type(r)(chunk_id=cid, raw=r.raw, output=o, fmt="sentences")
     return out
