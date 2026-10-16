@@ -52,22 +52,26 @@ class Extractor:
 
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
-                 max_words: int = MAX_WORDS, dense_words: int | None = None, entity_tagger: str | Path | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
+                 max_words: int = MAX_WORDS, dense_words: int | None = None, entity_tagger: str | Path | bool | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         self._tagger = None
-        if entity_tagger is not None:  # BERT-style entity tagging on the generator's states (relweave.tagger)
-            from relweave.tagger import EntityTagger
-            self._tagger = EntityTagger(entity_tagger)
         self.keep_unnamed = keep_unnamed
         if head is not None and not zeroshot:
             head = ex.resolve_head(head)  # a local directory or a Hub repository id
+        root = None
         if generator is None or head is None:
             root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
             generator, head = generator or root / "generator", head or root / "head"
+        # entity tagger (relweave.tagger): a directory, False for none, or None for the weights' own tagger/ when present
+        if entity_tagger is None and root is not None and (root / "tagger" / "tagger.pt").exists() and not zeroshot:
+            entity_tagger = root / "tagger"
+        if entity_tagger:
+            from relweave.tagger import EntityTagger
+            self._tagger = EntityTagger(entity_tagger)
         self._zs = None
         if zeroshot:
             from relweave.schema import load_schema

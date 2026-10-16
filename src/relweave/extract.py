@@ -27,12 +27,12 @@ BATCH_CHOICES = (8, 4, 2, 1)
 
 def resolve_weights(spec: str | Path) -> Path:
     """A local directory as it is; anything else is a Hub repository id, downloaded (cached) with
-    huggingface_hub.snapshot_download (only the parts relweave reads: generator/, head/, schema.json; the merged
+    huggingface_hub.snapshot_download (only the parts relweave reads: generator/, head/, tagger/, schema.json; the merged
     model at a repository's root is for HTTP servers such as vLLM)."""
     if Path(spec).is_dir():
         return Path(spec)
     from huggingface_hub import snapshot_download
-    return Path(snapshot_download(str(spec), allow_patterns=["generator/*", "head/*", "schema.json", "README.md"]))
+    return Path(snapshot_download(str(spec), allow_patterns=["generator/*", "head/*", "tagger/*", "schema.json", "README.md"]))
 
 
 def resolve_head(spec: str | Path) -> Path:

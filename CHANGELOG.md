@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ### Changed
 
+- **Entity tagger on by default.** When the weights include `tagger/` (relweave-4b-base does from this release), the
+  entity tagger (`relweave.tagger`) tags every name in one pass and adds the names the generator left out before the
+  pair head scores pairs. Long lists and tables: entity recall 0.78-0.92 -> 0.96-1.00, relation F1 +0.03 to +0.08;
+  prose unchanged (26 unseen documents, judged, paired +0.005). Each chunk is read a second time, so extraction is
+  slower. `--no-entity-tagger` / `Extractor(entity_tagger=False)` turns it off; `--entity-tagger DIR` uses another.
+- **The union's own cap.** The pair head's additions are no longer stopped by the generator's 40-relation cap.
 - **Layout-aware chunking.** A paragraph that is mostly table rows, list items or key-value lines is cut into chunks
   of at most `DENSE_WORDS` (80) words at line ends, and each such chunk carries context the model reads first: the
   heading above it and, inside a table, the table's header row and the nearest one-cell group row ("| Ministry of
