@@ -52,12 +52,16 @@ class Extractor:
 
     def __init__(self, weights: str | Path | None = None, schema=None, model: str | None = None,
                  generator: str | Path | None = None, head: str | Path | None = None, device: str = "cuda",
-                 max_words: int = MAX_WORDS, dense_words: int | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
+                 max_words: int = MAX_WORDS, dense_words: int | None = None, entity_tagger: str | Path | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
+        self._tagger = None
+        if entity_tagger is not None:  # BERT-style entity tagging on the generator's states (relweave.tagger)
+            from relweave.tagger import EntityTagger
+            self._tagger = EntityTagger(entity_tagger)
         self.keep_unnamed = keep_unnamed
         if head is not None and not zeroshot:
             head = ex.resolve_head(head)  # a local directory or a Hub repository id
@@ -96,7 +100,8 @@ class Extractor:
         self.carry = self._ce.carry if carry is None else carry
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
                            "generator": str(generator), "head": str(head),
-                           "cut": self._ce.cut, "margin": self._ce.margin}
+                           "cut": self._ce.cut, "margin": self._ce.margin,
+                           "entity_tagger": str(entity_tagger) if entity_tagger else None}
         if self._zs is not None:
             self.model_info.update(head=None, cut=None, margin=None, zeroshot=str(self._zs.dir), threshold=threshold)
 
@@ -121,6 +126,11 @@ class Extractor:
             _load(ce.load_generator, "generator")
             generated = self._generate_carried(chunked) if self.carry else (
                 ce.generate_many(items, self.batch_size) if items else {})
+            if getattr(self, "_tagger", None) is not None and hasattr(ce._gen, "model"):
+                texts_by_key = dict(items)
+                for k, r in generated.items():
+                    if not isinstance(r, Exception) and r.output is not None:
+                        generated[k] = self._tagger.augment(ce._gen.model, ce._gen.tokenizer, texts_by_key[k], r)
             failures = [r for r in generated.values() if isinstance(r, Exception)]
             if items and len(failures) == len(items):
                 raise RuntimeError(f"generation failed on every chunk ({_why(failures[0])}){_memory_note()}") \
