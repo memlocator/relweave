@@ -193,7 +193,8 @@ passes agree at about 0.88. Details: `docs/methodology.md`.
 `docs/recipe-own-schema.md` walks through it: chunk documents (`relweave label ingest`), have a frontier model label
 them (`relweave label prompts`, `relweave label import`), train the generator (`relweave train-generator`) and the
 pair head (`relweave train-head`), and evaluate (`relweave generate`, `relweave score`, `relweave eval`).
-`docs/methodology.md` documents how `relweave-4b-base` itself was trained.
+`docs/methodology.md` documents how `relweave-4b-base` itself was trained; `docs/whitepaper.md` is the full research
+write-up behind it.
 
 ## Licence
 

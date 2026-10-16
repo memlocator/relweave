@@ -1,11 +1,11 @@
 # Training methodology of relweave-4b-base
 
 This document describes how `relweave-4b-base` and its library `relweave` were trained and evaluated. It is written for
-an ML practitioner who wants to understand, reproduce or adapt the training. The experiments behind it (the full
-argument, run-by-run records and the experiment scripts named below) are in the experiment repository the library was
-split from, `entity-rel-extraction` (`docs/whitepaper.md`, `docs/findings-2026-09-28-filters.md`); numbers here are
-copied from those documents. Commands in this document use the `relweave` command line; scripts marked
-"(experiment repository)" exist only there.
+an ML practitioner who wants to understand, reproduce or adapt the training. The full argument behind it is the
+whitepaper, [whitepaper.md](whitepaper.md). Run-by-run records and the experiment scripts named below are in the
+experiment repository the library was split from, `entity-rel-extraction` (`docs/findings-2026-09-28-filters.md`);
+numbers here are copied from those documents. Commands in this document use the `relweave` command line; scripts
+marked "(experiment repository)" exist only there.
 
 ## 1. What the model does
 
