@@ -53,6 +53,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         batch_size: str = typer.Option("auto", help="chunks generated together: 1, 2, 4, 8 ... or auto"),
         max_words: int = typer.Option(MAX_WORDS, help="words per chunk"),
         entity_tagger: Path | None = typer.Option(None, help="entity tagger directory (tagger.pt, tagger_config.json); default: the weights' own tagger/ when present. It adds the names the generator did not list before the relation head scores pairs"),
+        separate_models: bool = typer.Option(False, help="load the base model twice (generator and head) instead of once with both adapters"),
         no_entity_tagger: bool = typer.Option(False, help="run without the entity tagger (faster; long lists and tables lose names)"),
         dense_words: int | None = typer.Option(None, help="words per chunk for tables and lists (default: the head's own setting, else 80; 0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
@@ -69,7 +70,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
     import relweave
     try:
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
-                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, dense_words=dense_words, entity_tagger=False if no_entity_tagger else entity_tagger, reserve_mb=reserve_mb,
+                                margin=margin, batch_size=_batch(batch_size), max_words=max_words, dense_words=dense_words, entity_tagger=False if no_entity_tagger else entity_tagger, share_base=not separate_models, reserve_mb=reserve_mb,
                                 generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
                                 zeroshot_weights=zeroshot_weights, keep_unnamed=keep_unnamed)
         many = len(files) > 1

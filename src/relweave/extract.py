@@ -205,7 +205,8 @@ supplies the prompt settings and tokenizer."""
 
     def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
-                 margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None):
+                 margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None,
+                 share_base: bool = True):
         from relweave import union as un
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
@@ -230,6 +231,10 @@ supplies the prompt settings and tokenizer."""
         self.max_new_tokens = max_new_tokens or settings.get("max_new_tokens", 2500)
         cap_memory(reserve_mb)
         self._gen = self._head = None
+        # one base model with the generator's and the head's adapters attached by name, switched per phase (instead of
+        # a second 3.6 GB copy of the base); off when the generator is served (it then lives in the server)
+        self.share_base = share_base and not generator_url
+        self._base = None
 
     def _read_head_config(self) -> dict:
         d = self.head_dir
@@ -251,9 +256,28 @@ supplies the prompt settings and tokenizer."""
         if self._gen is None:
             from relweave.generator import QwenExtractor
             from relweave.head import adapter_dir
+            shared = dict(shared_model=self._shared_base(), adapter_name="generator") if self.share_base else {}
             self._gen = QwenExtractor(model_id=self.model, adapter=adapter_dir(self.generator_dir), constrained=True,
                                       fmt="sentences", compact=self.compact, stop_on_repeat=True, schema=self.schema,
-                                      conditioned=self.conditioned, max_new_tokens=self.max_new_tokens)
+                                      conditioned=self.conditioned, max_new_tokens=self.max_new_tokens, **shared)
+
+    def _shared_base(self):
+        """The base model with the generator's adapter (named "generator"), loaded once; the head's adapter is added
+        to it by load_head (named "head"). bf16 compute, as the head was trained."""
+        if self._base is None:
+            import torch
+            from peft import PeftModel
+            from transformers import AutoModelForCausalLM
+            from relweave.head import adapter_dir
+            base = AutoModelForCausalLM.from_pretrained(self.model, dtype=torch.bfloat16, device_map="cuda")
+            self._base = PeftModel.from_pretrained(base, str(adapter_dir(self.generator_dir)),
+                                                   adapter_name="generator").eval()
+        return self._base
+
+    def activate(self, part: str) -> None:
+        """Make "generator" or "head" the active adapter of the shared base (no-op with separate models)."""
+        if self.share_base and self._base is not None:
+            self._base.set_adapter(part)
 
     def _tokenizer_dir(self) -> Path:
         from relweave.head import adapter_dir
@@ -262,7 +286,12 @@ supplies the prompt settings and tokenizer."""
 
     def unload_generator(self) -> None:
         self._gen = None
+        self._drop_base_if_unused()
         _free_gpu()
+
+    def _drop_base_if_unused(self) -> None:
+        if self.share_base and self._gen is None and self._head is None:
+            self._base = None
 
     def load_head(self) -> None:
         if self.head_dir is None:
@@ -271,7 +300,15 @@ supplies the prompt settings and tokenizer."""
             from relweave.head import LAYERS, adapter_dir, labels, load_head, load_model
             head, config = load_head(self.head_dir)
             layers = tuple(config.get("layers", LAYERS))
-            tok, model = load_model(self.model, adapter_dir(self.head_dir))
+            if self.share_base:  # attach the head's adapter to the shared base
+                from transformers import AutoTokenizer
+                model = self._shared_base()
+                if "head" not in model.peft_config:
+                    model.load_adapter(str(adapter_dir(self.head_dir)), adapter_name="head")
+                tok = AutoTokenizer.from_pretrained(str(adapter_dir(self.head_dir)))
+                tok.padding_side = "left"
+            else:
+                tok, model = load_model(self.model, adapter_dir(self.head_dir))
             if head.net[1].in_features != len(layers) * model.config.hidden_size:
                 raise ValueError("the head does not match the base model's hidden size and the layers read")
             if head.net[4].out_features != len(labels(self.schema)) + 1:
@@ -281,6 +318,7 @@ supplies the prompt settings and tokenizer."""
 
     def unload_head(self) -> None:
         self._head = None
+        self._drop_base_if_unused()
         _free_gpu()
 
     # -- phases ------------------------------------------------------------------------------------------------
@@ -357,6 +395,7 @@ supplies the prompt settings and tokenizer."""
         from relweave.formats import chat_messages, generation_prompt
         from relweave.head import entity_lines, labels, probe_states
         self.load_head()
+        self.activate("head")
         tok, model, head, layers = self._head
         labs = labels(self.schema)
         sym = {t for t, _ in labs} - {t for t, d in labs if d == "<"}

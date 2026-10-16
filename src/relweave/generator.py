@@ -136,7 +136,8 @@ class QwenExtractor:
                  repetition_penalty: float = 1.0, fmt: str = STUDENT_FORMAT, compact: bool = False,
                  typed_relations: bool = False, stop_on_repeat: bool = False, stop_bias: float = 0.0,
                  grounded: bool = False, temperature: float = 0.0,
-                 schema: Schema | None = None, conditioned: bool = False):
+                 schema: Schema | None = None, conditioned: bool = False, shared_model=None,
+                 adapter_name: str | None = None):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -158,6 +159,11 @@ class QwenExtractor:
         self.tokenizer.padding_side = "left"  # batched generation appends to the right
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.adapter_name = adapter_name  # with a shared base (several adapters on one model): activated per call
+        if shared_model is not None:
+            self.model = shared_model
+            self._finish_init(max_new_tokens, repetition_penalty, constrained)
+            return
         kwargs: dict = {"dtype": torch.float16, "device_map": "cuda"}
         if load_in_4bit:
             from transformers import BitsAndBytesConfig
@@ -171,6 +177,9 @@ class QwenExtractor:
             if not getattr(self.model.config, "quantization_config", None):
                 self.model = self.model.merge_and_unload()
         self.model.eval()
+        self._finish_init(max_new_tokens, repetition_penalty, constrained)
+
+    def _finish_init(self, max_new_tokens, repetition_penalty, constrained) -> None:
         self.max_new_tokens = max_new_tokens
         self.repetition_penalty = repetition_penalty
         self.constrained = constrained
@@ -181,6 +190,10 @@ class QwenExtractor:
             vocab_size = getattr(self.model.config, "vocab_size", None) or len(self.tokenizer)
             info = xgr.TokenizerInfo.from_huggingface(self.tokenizer, vocab_size=vocab_size)
             self._compiler = xgr.GrammarCompiler(info)
+
+    def _activate(self) -> None:
+        if self.adapter_name is not None:
+            self.model.set_adapter(self.adapter_name)
 
     def _grammar_for(self, chunk_text: str):
         """Compiled grammar for this chunk; formats with per-chunk grammars are cached by key."""
@@ -212,6 +225,7 @@ class QwenExtractor:
             gen_kwargs["logits_processor"] = [xgr.contrib.hf.LogitsProcessor(grammar)]
         t0 = time.perf_counter()
         with torch.no_grad():
+            self._activate()
             out = self.model.generate(**inputs, **gen_kwargs)
         seconds = time.perf_counter() - t0
         raw = self.tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
@@ -253,6 +267,7 @@ class QwenExtractor:
                 gen_kwargs["logits_processor"] = [xgr.contrib.hf.LogitsProcessor(grammars)]
             t0 = time.perf_counter()
             with torch.no_grad():
+                self._activate()
                 out = self.model.generate(**enc, **gen_kwargs)
             per_chunk = (time.perf_counter() - t0) / len(batch)
             prompt_len = enc["input_ids"].shape[1]

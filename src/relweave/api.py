@@ -55,7 +55,8 @@ class Extractor:
                  max_words: int = MAX_WORDS, dense_words: int | None = None, entity_tagger: str | Path | bool | None = None, sequential: bool | None = None, reserve_mb: int = 500, group: int = 20,
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
-                 threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False):
+                 threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False,
+                 share_base: bool = True):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         self._tagger = None
@@ -90,7 +91,7 @@ class Extractor:
             self._zs, self.threshold, self.schema = ZeroShot(zeroshot_weights or DEFAULT_WEIGHTS), threshold, user
         else:
             self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
-                                         generator_url=generator_url)
+                                         generator_url=generator_url, share_base=share_base)
             self.schema = self._ce.schema
         if dense_words is None:  # the head says which chunk size it was trained to read tables and lists in
             cfg = getattr(self._ce, "head_config", None) or {}
@@ -98,8 +99,10 @@ class Extractor:
         self.dense_words = dense_words or None  # 0: tables and lists chunked as prose
         if sequential is None:
             import torch
-            # both parts resident: generator about 3.6 GB plus head or zero-shot adapter about 3.4 GB, plus activations
-            sequential = torch.cuda.mem_get_info()[0] < RESIDENT_MB * 2**20
+            # with a shared base both parts are one model (about 3.6 GB plus two small adapters): keep them resident;
+            # with separate models: generator about 3.6 GB plus head or zero-shot adapter about 3.4 GB, plus activations
+            sequential = not getattr(self._ce, "share_base", False) and \
+                torch.cuda.mem_get_info()[0] < RESIDENT_MB * 2**20
         self.sequential = sequential
         self.carry = self._ce.carry if carry is None else carry
         self.model_info = {"base": str(self._ce.model), "weights": str(weights or ex.DEFAULT_WEIGHTS),
@@ -134,6 +137,7 @@ class Extractor:
             self._tagger_skipped = False
             if tagger is not None and tagger.reads == "generator":
                 if hasattr(ce._gen, "model"):  # a local generator: tag on its states while it is loaded
+                    ce.activate("generator")
                     texts_by_key = dict(items)
                     for k, r in generated.items():
                         if not isinstance(r, Exception) and r.output is not None:
@@ -171,6 +175,7 @@ class Extractor:
             return self._zeroshot_graph(c, r)
         tagger = getattr(self, "_tagger", None)
         if tagger is not None and tagger.reads == "head" and self._ce._head is not None:
+            self._ce.activate("head")
             tok, model = self._ce._head[0], self._ce._head[1]  # the head's own loaded model: works with a served generator
             r = tagger.augment(model, tok, c.model_text, r)
         try:
