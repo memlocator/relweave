@@ -852,3 +852,88 @@ judging tools are in relweave (`relweave train-generator`, `train-head`, `train-
 - Data and labels: `scripts/label_with_teacher.md`, `scripts/cheap_label.py`, `scripts/select_chunks.py`,
   `scripts/holdout_overlap.py`, `scripts/fact_overlap.py`, `scripts/list_audit.py`.
 - Error analysis: `scripts/error_modes.py`, `scripts/diagnostics.py`.
+
+## Appendix B. Licences and attribution
+
+| component | licence | what it requires |
+|---|---|---|
+| relweave code and the relweave-4b-base / relweave-1.7b-base weights | Apache 2.0 | keep the licence and notices |
+| Wikipedia article text (training, validation and test chunks) | CC BY-SA 4.0 | attribution (Wikipedia contributors, https://en.wikipedia.org); share-alike for any redistributed text or data derived from it |
+| Re-DocRED (experiments only) | MIT | keep the copyright notice |
+| Qwen3-4B, Qwen3-1.7B (base models) | Apache 2.0 | keep the licence and notices |
+
+The weights were trained on English Wikipedia passages. Redistributing the training text, or labels derived from it,
+falls under CC BY-SA 4.0. Other data tried in experiments (news, press releases, court opinions, government reports)
+was not used to train relweave-4b-base. The coreference model Maverick, tried in Section 5.7, has non-commercial
+weights and is not part of relweave.
+
+## Appendix C. How to reproduce relweave-4b-base with relweave
+
+Install with the training extra (`pip install "relweave[train]"`); every `relweave` command has `--help`. Local runs
+used one 8 GB GPU; paid runs used Hugging Face Jobs on an L4 GPU (24 GB). Labelled chunk files are JSONL with
+`chunk_id`, `doc_id`, `text`, `gold` and `schema` (see `relweave.training.data`). `relweave schema` prints the schema's
+types and definitions; `src/relweave/schema/business.py` is its source.
+
+1. **Data and labels.** Chunk the documents: `relweave label ingest <texts dir> --out chunks.jsonl`. Teacher prompts
+   and answers: `relweave label prompts chunks.jsonl --out prompts/`, answers following `relweave label guide`, then
+   `relweave label import chunks.jsonl --raw-dir raw/ --out labelled/`. Correction labelling: `relweave label draft`
+   then `relweave label correct`.
+2. **Generator.** `relweave train-generator <pilot chunks> --out runs/pilot --lr 1.5e-4 --epochs 2` (rank 32 and the
+   compact prompt are the defaults), then
+   `relweave train-generator <training chunks> --out runs/gen --init-adapter runs/pilot/adapter --lr 1e-4 --epochs 1`.
+3. **Generator answers** on validation, test and training chunks:
+   `relweave generate <chunks.jsonl> --generator runs/gen --out gen_<set>.jsonl`.
+4. **Pair head.** `relweave train-head <training chunks> --generator runs/gen --own-results gen_train.jsonl --max-probes 200 --out runs/head`
+   (the published head continued from a stage-0 head: `--base-head`).
+5. **Entity tagger.** `relweave train-tagger <training chunks> --head runs/head --out runs/tagger`.
+6. **Score and union.** `relweave score <chunks.jsonl> gen_<set>.jsonl --generator runs/gen --head runs/head --out scores_<set>.json`,
+   then `relweave eval <chunks.jsonl> gen_<set>.jsonl --scores scores_<set>.json` (generator alone and union; pick
+   `--cut` and `--margin` on validation, report test once).
+7. **Judged scores on whole documents.** `relweave run` on the documents, then pooled judging with `relweave judge`
+   (docs/quickstart-new-domain.md, step 6; docs/evaluation-standards.md).
+
+The library entry point is `relweave.Extractor` (`relweave run` on the command line).
+
+## Appendix D. Labelling conventions and training settings
+
+**Labelling conventions** (beyond the type definitions that `relweave schema` prints):
+
+- A list gets one relation per member. If a lead sentence says "acquired A, B, C and D", all four get the relation.
+- In a chain of owners, a subsidiary is linked only to its nearest parent that the text states.
+- A board chair or honorary chairman is `EXECUTIVE_OF`; an ordinary board seat is `BOARD_MEMBER_OF`.
+- A person is `LOCATED_IN` a place only where they live; a birthplace is `BORN_IN`.
+- An organisation based in a place is `HEADQUARTERED_IN`, not `LOCATED_IN`.
+- Publications, imprints and product brands are Orgs linked by `SUBSIDIARY_OF`, never Objects.
+- `ACQUIRED` is written only when the text names the buyer. When Orgs merge into a new Org, each merging Org `FOUNDED` it.
+
+**Data.** English Wikipedia articles on Nordic and European business, cut into chunks of about 1,000 characters. The
+generator also trained on 7,252 overlapping windows of a few sentences cut from the 2,859 chunks (labels restricted to
+the window), 10,111 examples in all, so it sees short and long inputs. The labelled data is published as
+[chrullis/relweave-business-data](https://huggingface.co/datasets/chrullis/relweave-business-data) (CC BY-SA 4.0).
+
+**Generator.**
+
+| setting | value |
+|---|---|
+| base model | Qwen3-4B, 4-bit (NF4) base, LoRA adapter (QLoRA) |
+| LoRA | rank 32, alpha 32, dropout 0.05 |
+| optimiser | AdamW 8-bit, cosine schedule, warmup ratio 0.05, weight decay 0.01, gradient accumulation 8 |
+| pilot stage | fresh LoRA on 2,000 completed chunks, lr 1.5e-4, 2 epochs |
+| main stage | continued from the pilot adapter, 1 epoch on 10,765 training examples, lr 1e-4 |
+| max sequence length | 3,072 tokens (longest training example 1,251) |
+| loss | on the response only |
+| output | compact text lines (entity lines with all surface strings, relation lines grouped by sentence), compact one-line prompt, grammar-constrained decoding, stop-on-repeat check |
+
+**Pair head.** Probes `P E1 Org E2 Place` after the entity lines, packed into one pass, each seeing the text and entity
+lines but not the other probes, sharing one position id. Readout: last-token states at layers -1 and -9, concatenated,
+then LayerNorm, Linear to 512, GELU, dropout 0.1, Linear to one score per relation type and direction plus a threshold
+class (about 2M parameters). Loss: ATLOP's adaptive threshold, plus a language-model loss on the entity lines (weight
+0.5) for examples with gold entity lines. Stage 0 trains the head on frozen states; stage 1 trains it jointly with a
+second LoRA initialised from the generator's (lr 1e-4 LoRA, 5e-4 head, gradient accumulation 8, up to 200 probes per
+chunk: all related pairs, then sampled unrelated ones). Half the examples use the generator's own entity lines,
+aligned to gold. Union: cut -2 and margin +0.5, chosen on validation (grid cut -12 to -2, margin -1 to +1).
+
+**Entity tagger.** An MLP (LayerNorm, Linear to 512, GELU, dropout 0.1, Linear to the tags) over the frozen head adapter's states at layers -1 and -14, BIO tags per entity type,
+trained on name mentions (a mention sharing a capitalised word with the name; no pronouns or descriptions), the text
+read once; 2 epochs, AdamW lr 1e-3, weight 0.3 on the outside tag. Spans snap to whole words, end at line breaks and
+drop trailing punctuation.

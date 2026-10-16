@@ -254,6 +254,13 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
     typer.echo(f"{n} results -> {out}")
 
 
+@app.command("schema")
+def schema_cmd(schema: str | None = typer.Option(None, help=SCHEMA_HELP + " (default the business schema)")) -> None:
+    """Print a schema's entity and relation types, endpoints and definitions as markdown tables."""
+    from relweave.schema import BUSINESS
+    typer.echo((_schema(schema) or BUSINESS).markdown(), nl=False)
+
+
 @app.command()
 def score(chunks: Path = typer.Argument(..., help="chunk file"),
           results: Path = typer.Argument(..., help="generator results (relweave generate)"),

@@ -114,7 +114,7 @@ Symmetric relation types are undirected edges. The document node links to each e
 
 The model is trained on a business schema of 6 entity types (Person, Org, Object, Place, Coordinate, Event) and 21
 relation types (EMPLOYED_BY, EXECUTIVE_OF, BOARD_MEMBER_OF, OWNS_STAKE_IN, SUBSIDIARY_OF, ACQUIRED,
-HEADQUARTERED_IN, ...). The full list with definitions is in `docs/methodology.md`.
+HEADQUARTERED_IN, ...). `relweave schema` prints the full list with definitions.
 
 A schema is written as Python classes; the docstring is the definition the model reads:
 
@@ -169,7 +169,7 @@ per type for your text. Details, numbers and limits: `docs/zero-shot.md`.
 
 Typed relation F1 (strict: both endpoints aligned to gold entities, type and direction right) on held-out English
 business Wikipedia chunks from articles not used in training (some names and facts recur; see
-`docs/methodology.md`, Section 4):
+`docs/whitepaper.md`, Section 5.2):
 
 | system | validation | test |
 |---|---|---|
@@ -177,7 +177,7 @@ business Wikipedia chunks from articles not used in training (some names and fac
 | relweave-4b-base (generator + pair head, union) | 0.781 | 0.783 |
 
 The test set has 105 chunks, so one test score is uncertain by about +-0.045. Two independent labelling
-passes agree at about 0.88. Details: `docs/methodology.md`.
+passes agree at about 0.88. Details: `docs/whitepaper.md`, Sections 3-5.
 
 ## Limits
 
@@ -193,21 +193,21 @@ passes agree at about 0.88. Details: `docs/methodology.md`.
 `docs/recipe-own-schema.md` walks through it: chunk documents (`relweave label ingest`), have a frontier model label
 them (`relweave label prompts`, `relweave label import`), train the generator (`relweave train-generator`) and the
 pair head (`relweave train-head`), and evaluate (`relweave generate`, `relweave score`, `relweave eval`).
-`docs/methodology.md` documents how `relweave-4b-base` itself was trained; `docs/whitepaper.md` is the full research
-write-up behind it.
+`docs/whitepaper.md` documents how `relweave-4b-base` itself was trained and the research behind it (commands to
+reproduce it: Appendix C).
 
 ## Licence
 
 The code and the model weights (chrullis/relweave-4b-base, chrullis/relweave-1.7b-base) are licensed under the Apache License 2.0 (`LICENSE`). The
 weights were trained on English Wikipedia passages (CC BY-SA 4.0; attribution: Wikipedia contributors,
 https://en.wikipedia.org); redistributing the training text or labels derived from it falls under CC BY-SA 4.0. The base
-models Qwen3-4B and Qwen3-1.7B are Apache 2.0. Details: `docs/methodology.md`, Section 9.
+models Qwen3-4B and Qwen3-1.7B are Apache 2.0. Details: `docs/whitepaper.md`, Appendix B.
 
 ## Links
 
 - Models: https://huggingface.co/chrullis/relweave-4b-base, https://huggingface.co/chrullis/relweave-1.7b-base
 - Training and evaluation data: https://huggingface.co/datasets/chrullis/relweave-business-data (CC BY-SA 4.0)
-- Methodology: `docs/methodology.md`
+- Whitepaper (how the model was built, results, what did not work): `docs/whitepaper.md`
 - A new domain, step by step (schema, labels by agents, training, scoring by judges): `docs/quickstart-new-domain.md`
 - What a result on a new domain must pass before it is reported: `docs/evaluation-standards.md`
 - Training on your own schema: `docs/recipe-own-schema.md`

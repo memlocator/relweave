@@ -13,7 +13,7 @@ number of training chunks starved the head (step 7). With so little data the hea
 
 **New types need data and training.** relweave-4b-base reads the 6 entity types and 21 relation types of its business
 schema. It does not read new types zero-shot. An experimental schema-conditioned head reached 0.29 F1 on unseen
-relation types, against about 0.80 on trained ones, and is not part of the model (see `docs/methodology.md`, section 8).
+relation types, against about 0.80 on trained ones, and is not part of the model (see `docs/whitepaper.md`, Section 5.5).
 You must label text with your types and train.
 
 Install with the training extra: `pip install "relweave[train] @ git+https://github.com/memlocator/relweave"`. Every

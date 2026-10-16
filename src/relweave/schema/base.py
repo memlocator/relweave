@@ -173,6 +173,19 @@ class Schema:
         root = self._root or self
         return Schema(f"{root.name}/variant", nodes, rels, names=names, defs=defs, restrict=kept_nodes, root=root), mapping
 
+    def markdown(self) -> str:
+        """The entity and relation types with their endpoint types and definitions, as markdown tables (what
+        `relweave schema` prints; documentation is generated from this, not written by hand)."""
+        def ends(types: frozenset[str]) -> str:
+            return " or ".join(t for t in self.node_names() if t in types)
+        out = [f"### Entity types ({len(self._nodes)})", "", "| type | definition |", "|---|---|"]
+        out += [f"| {n} | {self.definition(n)} |" for n in self.node_names()]
+        out += ["", f"### Relation types ({len(self._edges)})", "", "| relation | endpoints (source -> target) | definition |",
+                "|---|---|---|"]
+        out += [f"| {e} | {ends(self.sources(e))} -> {ends(self.targets(e))}{' (symmetric)' if self.symmetric(e) else ''} "
+                f"| {self.definition(e)} |" for e in self.edge_names()]
+        return "\n".join(out) + "\n"
+
     def attributes(self, edge: str) -> tuple[str, ...]:
         return tuple(self._edges[edge].model_fields)
 

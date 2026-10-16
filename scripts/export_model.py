@@ -150,11 +150,11 @@ Entity types: {", ".join(schema.node_names())}.
 
 ## Results
 
-TODO: fill in from docs/methodology.md (typed relation F1, strict, validation and test).
+TODO: fill in from docs/whitepaper.md, Section 5.2 (typed relation F1, strict, validation and test).
 
 ## Limits
 
-TODO: from docs/methodology.md, Section 8 (English business text, the schema above only, at most 40 entities and
+TODO: from docs/whitepaper.md, Section 8 (English business text, the schema above only, at most 40 entities and
 40 relations per chunk, list items are the main source of misses).
 
 ## Training data and licences
@@ -162,7 +162,7 @@ TODO: from docs/methodology.md, Section 8 (English business text, the schema abo
 The code (relweave) and these weights are licensed under the Apache License 2.0. The adapters were trained on English
 Wikipedia passages (CC BY-SA 4.0; attribution: Wikipedia contributors, https://en.wikipedia.org), labelled by a
 language model; redistributing the training text or labels derived from it falls under CC BY-SA 4.0. The base model
-{original} is Apache 2.0. Details: docs/methodology.md, Section 9.
+{original} is Apache 2.0. Details: docs/whitepaper.md, Appendix B.
 
 ## Citation
 
