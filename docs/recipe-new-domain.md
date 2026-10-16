@@ -86,6 +86,19 @@ that introduces a list (`--dense-words`, 0 turns this off). On real cabinet page
 60 names; prose is chunked as before. One long comma-separated sentence cannot be split, and past 40 entities in one
 chunk the output cap cuts it. A relation stated only by a table column still needs training on that layout.
 
+**Entity tagger (default from relweave 0.3).** The generator lists each chunk's entities and can end the list early;
+in long lists and tables it found 0.78-0.92 of the names. relweave-4b-base now ships `tagger/`, a small classifier on
+the generator's own hidden states that tags every name in one pass (reading each window twice so every token has seen
+the whole window); its names join the generator's before the pair head scores pairs. Measured: entity recall 0.96-1.00
+on written lists, lead-sentence lists and annual-report tables, relation F1 +0.03 to +0.08 there, and no measurable
+change on 26 unseen prose documents (judged, paired +0.005). It reads each chunk a second time (`--no-entity-tagger`
+for speed). On real translated reports it also tags law titles kept as names, which the schema does not count.
+
+For a new domain: the tagger's types are Person, Org and Place. For other entity types, train one on your labelled
+chunks with `scripts/entity_head.py` in the project repository (the 4B stays frozen; about 12 minutes on an 8 GB GPU
+for 2,700 chunks); label names, not pronouns (`relweave.tagger.name_mentions`), and leave titles that are not
+entities unlabelled in your data, or the tagger learns to tag them.
+
 **Table head (experimental).** A pair head trained on table and list windows of up to 250 words with their header
 context (`--head chrullis/relweave-4b-head-tables`; it sets its own window size). On 5 real cabinet pages, judged:
 0.76 F1 against 0.65 for the base model with layout-aware chunks (paired +0.12, 95% +0.03 to +0.25), all of the gain
