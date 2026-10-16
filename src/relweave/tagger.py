@@ -57,19 +57,26 @@ def name_mentions(entity: dict) -> list[str]:
     """The mentions of a labelled entity the tagger learns to tag: its name and every mention sharing a word with it
     ("Kelvorn" for "Kelvorn Pumps GmbH", "the Riksdag" for "the Riksdag"), not pronouns or descriptions such as "it"
     or "the company". The tagger finds names the generator left out; resolving "it" stays with the generator."""
-    words = {w.lower() for w in re.findall(r"\w+", entity["name"]) if len(w) > 1}
+    words = _name_words(entity["name"])
     keep = [entity["name"]]
     for m in entity.get("mentions", []):
-        if m != entity["name"] and words & {w.lower() for w in re.findall(r"\w+", m)}:
+        if m != entity["name"] and words & _name_words(m):
             keep.append(m)
     return keep
 
 
-def encode(tok, text: str, gold_spans=None, tags=TAGS):
-    """Token ids of text twice, the positions of the second copy's tokens with their character spans in text, and
-    (with gold_spans) their BIO tag ids."""
-    full = text + "\n\n" + text
-    off0 = len(text) + 2
+def _name_words(text: str) -> set[str]:
+    """Capitalised words of a name, as written, not articles: what a short form must share with the name to be one
+    ("Kelvorn" for "Kelvorn Pumps GmbH"); "the company" shares nothing with "Acme Company" and "the" nothing with
+    "The Lego Group"."""
+    return {w for w in re.findall(r"\w+", text) if len(w) > 1 and w[0].isupper() and w not in ("The", "An")}
+
+
+def encode(tok, text: str, gold_spans=None, tags=TAGS, echo: bool = True):
+    """Token ids of text twice (echo) or once, the positions of the tagged copy's tokens with their character spans
+    in text, and (with gold_spans) their BIO tag ids."""
+    full = text + "\n\n" + text if echo else text
+    off0 = len(text) + 2 if echo else 0
     enc = tok(full, return_offsets_mapping=True, add_special_tokens=False)
     pos, char, tag_ids = [], [], []
     for i, (a, b) in enumerate(enc["offset_mapping"]):
@@ -97,7 +104,7 @@ def _word_end(text: str, b: int) -> int:
 
 def decode(text: str, char, pred, tags=TAGS) -> list[tuple[int, int, str]]:
     """Entity spans (start, end, type) from BIO tag ids over tokens with character spans; a span ending inside a word
-    is extended to the word's end."""
+    is extended to the word's end, and a span crossing a line break ends at it."""
     out, cur = [], None
     for (a, b), p in zip(char, pred):
         tag = tags[p]
@@ -119,6 +126,8 @@ def decode(text: str, char, pred, tags=TAGS) -> list[tuple[int, int, str]]:
         while a > 0 and text[a - 1].isalnum():  # a span starting inside a word starts at the word's start
             a -= 1
         b = _word_end(text, b)
+        if "\n" in text[a:b]:  # a name does not cross a line break (a token like "\n-" carried the tag along)
+            b = a + text[a:b].index("\n")
         while b > a and text[b - 1] in ",.;:!?\"'":  # punctuation a token carried along is not part of the name
             b -= 1
         if text[a:b].strip():
@@ -149,24 +158,40 @@ class EntityTagger:
         self.config = json.loads((d / "tagger_config.json").read_text())
         self.layers = list(self.config["layers"])
         self.reads = self.config.get("reads", "generator")  # whose hidden states it was trained on: generator or head
+        self.echo = self.config.get("echo", True)  # text fed twice, the second copy tagged
+        self.lookahead = int(self.config.get("lookahead", 0))  # or: one copy, each token read with the next k states
         self.tags = tuple(self.config.get("tags", TAGS))
         self.state = torch.load(d / "tagger.pt", map_location="cpu", weights_only=True)
         self.net = None
 
-    def _features(self, model, ids, pos):
-        with torch.no_grad():
-            out = model(input_ids=torch.tensor([ids], device=model.device), output_hidden_states=True)
-        return torch.cat([out.hidden_states[k][0, pos].float() for k in self.layers], dim=-1)
+    def dim(self, hidden_size: int) -> int:
+        return hidden_size * len(self.layers) * (1 + getattr(self, "lookahead", 0))
 
-    def tag(self, model, tok, text: str) -> list[tuple[str, str, int, int]]:
-        """(surface, type, start, end) for every entity span in text, any length (line-aligned windows)."""
+    def _features(self, model, ids, pos):
+        """Per tagged token: its hidden states at the layers read, and with lookahead k also the states of the next k
+        tokens (which have read it; a causal model's own state has not seen the rest of the name)."""
+        from relweave.states import layer_states
+        states = layer_states(model, self.layers, input_ids=torch.tensor([ids], device=model.device))
+        k = getattr(self, "lookahead", 0)
+        idx = torch.tensor(pos, device=model.device)
+        parts = []
+        for h in states:
+            h = h[0]
+            for j in range(k + 1):
+                parts.append(h[torch.clamp(idx + j, max=h.shape[0] - 1)].float())
+        return torch.cat(parts, dim=-1)
+
+    def tag(self, model, tok, text: str, window_words: int | None = None) -> list[tuple[str, str, int, int]]:
+        """(surface, type, start, end) for every entity span in text, any length (line-aligned windows of
+        window_words, default the config's; 0: the whole text in one pass)."""
         if self.net is None:
-            self.net = TaggerNet(model.config.hidden_size * len(self.layers), len(self.tags)).to(model.device)
+            self.net = TaggerNet(self.dim(model.config.hidden_size), len(self.tags)).to(model.device)
             self.net.load_state_dict(self.state)
             self.net.eval()
         found = []
-        for off, w in windows(text, self.config.get("window_words", WINDOW_WORDS)):
-            ids, pos, char, _ = encode(tok, w)
+        size = self.config.get("window_words", WINDOW_WORDS) if window_words is None else window_words
+        for off, w in (windows(text, size) if size else [(0, text)]):
+            ids, pos, char, _ = encode(tok, w, echo=self.echo)
             if not pos:
                 continue
             with torch.no_grad():

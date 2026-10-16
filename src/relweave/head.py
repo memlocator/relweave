@@ -81,10 +81,10 @@ def probe_states(model, tok, prefix: str, types: dict[int, str], layers=(-1,), m
     big = torch.finfo(torch.bfloat16).min
     m = torch.zeros(mask.shape, dtype=torch.bfloat16)
     m.masked_fill_(~mask, big)
-    out = model(input_ids=torch.tensor([ids], device=dev), position_ids=torch.tensor([pos], device=dev),
-                attention_mask=m[None, None].to(dev), output_hidden_states=True,
-                logits_to_keep=1)  # only hidden states are needed: no vocabulary logits over the probes
-    hs = torch.cat([out.hidden_states[k][0, last] for k in layers], dim=-1).float().cpu()
+    from relweave.states import layer_states
+    states = layer_states(model, layers, input_ids=torch.tensor([ids], device=dev),
+                          position_ids=torch.tensor([pos], device=dev), attention_mask=m[None, None].to(dev))
+    hs = torch.cat([h[0, last] for h in states], dim=-1).float().cpu()
     return pairs, hs
 
 

@@ -25,9 +25,12 @@ def _log(echo, *a):
 
 def train_tagger(chunks: list[str | Path], out: str | Path, adapter: str | Path, base: str, types: list[str],
                  reads: str = "head", epochs: int = 2, layers=(-1, -14), lr: float = 1e-3, seed: int = 0,
-                 max_tokens: int = 4096, echo=print) -> dict:
+                 max_tokens: int = 4096, echo=print, double: bool = False, lookahead: int = 0) -> dict:
     """Train on labelled chunk files (records with "text" and "gold" entities) and write OUT/tagger.pt and
-    OUT/tagger_config.json. `adapter`: the directory whose adapter's states are read (the head's, or the generator's
+    OUT/tagger_config.json. Each token is tagged from its own states, the text read once (a causal state has read the
+    lead sentence and the name's earlier words, which is what a tag needs). double: feed the text twice and tag the
+    second copy, as taggers before relweave 0.3.1 did (no better on lists, half the speed); lookahead: also read the
+    next k tokens' states (worse: a line break picked up the next name). `adapter`: the directory whose adapter's states are read (the head's, or the generator's
     with reads="generator"). Returns the config."""
     from relweave.head import adapter_dir, load_model
     out = Path(out)
@@ -41,16 +44,19 @@ def train_tagger(chunks: list[str | Path], out: str | Path, adapter: str | Path,
     for r in rows:
         ents = (r.get("gold") or {}).get("entities", [])
         ments = [(m, e["type"]) for e in ents if e["type"] in types for m in name_mentions(e)]
-        ids, pos, _, tag_ids = encode(tok, r["text"], spans(r["text"], ments), tags)
+        ids, pos, _, tag_ids = encode(tok, r["text"], spans(r["text"], ments), tags, echo=double)
         if pos and len(ids) < max_tokens:
             data.append((ids, pos, tag_ids))
     layers = list(layers)
-    config = {"layers": layers, "tags": list(tags), "types": list(types), "base": base, "reads": reads, "echo": True,
+    config = {"layers": layers, "tags": list(tags), "types": list(types), "base": base, "reads": reads, "echo": double,
+              "lookahead": lookahead,
               "window_words": WINDOW_WORDS, "examples": len(data)}
     _log(echo, f"{len(data)} training chunks, {len(types)} entity types, layers {layers}, reading the {reads}'s states")
-    net = TaggerNet(model.config.hidden_size * len(layers), len(tags)).to(model.device)
     tagger = EntityTagger.__new__(EntityTagger)
-    tagger.config, tagger.layers, tagger.tags, tagger.reads, tagger.net = config, layers, tags, reads, net
+    tagger.config, tagger.layers, tagger.tags, tagger.reads = config, layers, tags, reads
+    tagger.echo, tagger.lookahead = double, lookahead
+    net = TaggerNet(tagger.dim(model.config.hidden_size), len(tags)).to(model.device)
+    tagger.net = net
     opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=0.01)
     weight = torch.ones(len(tags), device=model.device)
     weight[0] = 0.3  # most tokens are outside any entity

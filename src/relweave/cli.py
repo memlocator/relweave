@@ -353,6 +353,8 @@ def train_tagger_cmd(chunks: list[Path] = typer.Argument(..., help="labelled tra
                      types: str | None = typer.Option(None, help="comma-separated subset of the schema's entity types"),
                      model: str | None = typer.Option(None, help="base model (default the 4-bit Qwen3-4B)"),
                      epochs: int = 2, layers: str = typer.Option("-1,-14", help="hidden-state layers read"),
+                     echo_input: bool = typer.Option(False, "--echo-input", help="feed the text twice and tag the "
+                                                     "second copy (the pre-0.3.1 taggers; no better, half the speed)"),
                      seed: int = 0) -> None:
     """Train an entity tagger: tags every name in one pass, so names a long list or table would lose still reach
     the pair head (needs the train extra; about 12 minutes for 2,700 chunks on an 8 GB GPU)."""
@@ -366,7 +368,7 @@ def train_tagger_cmd(chunks: list[Path] = typer.Argument(..., help="labelled tra
     if unknown:
         raise typer.BadParameter(f"types {unknown} are not in schema {sch.name} ({all_types})")
     cfg = train_tagger(chunks, out, head, model or DEFAULT_MODEL, chosen, reads="head", epochs=epochs,
-                       layers=[int(x) for x in layers.split(",")], seed=seed, echo=typer.echo)
+                       layers=[int(x) for x in layers.split(",")], seed=seed, echo=typer.echo, double=echo_input)
     typer.echo(f"tagger for {', '.join(cfg['types'])} -> {out}; use it with: relweave run ... --head {head} "
                f"--entity-tagger {out}")
 
