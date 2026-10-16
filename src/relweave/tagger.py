@@ -3,8 +3,8 @@ is found in one pass, with no list to end early and no per-chunk entity cap.
 
 A decoder token cannot see the rest of its own name, so the text is fed twice and the second copy is tagged: every
 token there has read the whole text (echo embeddings, Springer et al. 2024, arXiv 2402.15449). A small MLP over the
-frozen generator's hidden states at LAYERS predicts BIO tags per entity type; a tagged span is extended to the end of
-the word it stops in (a name never ends inside a word; rare surnames are split into several tokens).
+frozen generator's hidden states at LAYERS predicts BIO tags per entity type; a tagged span is extended to whole words
+at both ends (a name never starts or ends inside a word; rare surnames and compounds are split into several tokens).
 
 In extraction (Extractor(entity_tagger=...)), the entities the tagger finds that the generator did not list are added
 to the chunk's entity lines before the relation head scores every pair, so a name the generator skipped can still take
@@ -44,6 +44,18 @@ def spans(text: str, mentions) -> list[tuple[int, int, str]]:
                 out.append((a, b, t))
                 taken.append((a, b))
     return sorted(out)
+
+
+def name_mentions(entity: dict) -> list[str]:
+    """The mentions of a labelled entity the tagger learns to tag: its name and every mention sharing a word with it
+    ("Kelvorn" for "Kelvorn Pumps GmbH", "the Riksdag" for "the Riksdag"), not pronouns or descriptions such as "it"
+    or "the company". The tagger finds names the generator left out; resolving "it" stays with the generator."""
+    words = {w.lower() for w in re.findall(r"\w+", entity["name"]) if len(w) > 1}
+    keep = [entity["name"]]
+    for m in entity.get("mentions", []):
+        if m != entity["name"] and words & {w.lower() for w in re.findall(r"\w+", m)}:
+            keep.append(m)
+    return keep
 
 
 def encode(tok, text: str, gold_spans=None):
@@ -97,6 +109,8 @@ def decode(text: str, char, pred) -> list[tuple[int, int, str]]:
     res = []
     for a, b, t in out:
         a = a + (len(text[a:b]) - len(text[a:b].lstrip()))
+        while a > 0 and text[a - 1].isalnum():  # a span starting inside a word starts at the word's start
+            a -= 1
         b = _word_end(text, b)
         while b > a and text[b - 1] in ",.;:!?\"'":  # punctuation a token carried along is not part of the name
             b -= 1

@@ -55,3 +55,17 @@ def test_augment_adds_only_missing_entities():
     r = t.augment(None, None, TEXT, r)
     assert [e.name for e in r.output.entities] == ["Birger Krogvig", "Acme Holdings"]
     assert "E2 Org: Acme Holdings" in r.raw
+
+
+def test_span_starting_inside_a_word_starts_at_the_word():
+    ids, pos, char, _ = encode(Tok(), TEXT)
+    pred = [0] * len(char)
+    k = next(k for k, (a, b) in enumerate(char) if TEXT[a:b] == "Krog")
+    pred[k + 1] = TAGS.index("B-Person")  # only "vig" tagged
+    assert [TEXT[a:b] for a, b, _ in decode(TEXT, char, pred)] == ["Krogvig"]
+
+
+def test_name_mentions_keep_names_and_drop_pronouns():
+    from relweave.tagger import name_mentions
+    e = {"name": "Kelvorn Pumps GmbH", "mentions": ["Kelvorn Pumps GmbH", "Kelvorn", "it", "the company"]}
+    assert name_mentions(e) == ["Kelvorn Pumps GmbH", "Kelvorn"]
