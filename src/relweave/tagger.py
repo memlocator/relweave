@@ -141,6 +141,7 @@ class EntityTagger:
         d = Path(tagger_dir)
         self.config = json.loads((d / "tagger_config.json").read_text())
         self.layers = list(self.config["layers"])
+        self.reads = self.config.get("reads", "generator")  # whose hidden states it was trained on: generator or head
         self.tags = tuple(self.config.get("tags", TAGS))
         self.state = torch.load(d / "tagger.pt", map_location="cpu", weights_only=True)
         self.net = None

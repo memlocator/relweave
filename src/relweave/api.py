@@ -130,11 +130,16 @@ class Extractor:
             _load(ce.load_generator, "generator")
             generated = self._generate_carried(chunked) if self.carry else (
                 ce.generate_many(items, self.batch_size) if items else {})
-            if getattr(self, "_tagger", None) is not None and hasattr(ce._gen, "model"):
-                texts_by_key = dict(items)
-                for k, r in generated.items():
-                    if not isinstance(r, Exception) and r.output is not None:
-                        generated[k] = self._tagger.augment(ce._gen.model, ce._gen.tokenizer, texts_by_key[k], r)
+            tagger = getattr(self, "_tagger", None)
+            self._tagger_skipped = False
+            if tagger is not None and tagger.reads == "generator":
+                if hasattr(ce._gen, "model"):  # a local generator: tag on its states while it is loaded
+                    texts_by_key = dict(items)
+                    for k, r in generated.items():
+                        if not isinstance(r, Exception) and r.output is not None:
+                            generated[k] = tagger.augment(ce._gen.model, ce._gen.tokenizer, texts_by_key[k], r)
+                else:  # a served generator (vLLM): its hidden states are not available here
+                    self._tagger_skipped = True
             failures = [r for r in generated.values() if isinstance(r, Exception)]
             if items and len(failures) == len(items):
                 raise RuntimeError(f"generation failed on every chunk ({_why(failures[0])}){_memory_note()}") \
@@ -164,8 +169,16 @@ class Extractor:
                               start=c.start, end=c.end)
         if self._zs is not None:
             return self._zeroshot_graph(c, r)
+        tagger = getattr(self, "_tagger", None)
+        if tagger is not None and tagger.reads == "head" and self._ce._head is not None:
+            tok, model = self._ce._head[0], self._ce._head[1]  # the head's own loaded model: works with a served generator
+            r = tagger.augment(model, tok, c.model_text, r)
         try:
-            return self._ce.combine(c, r, self._ce.pair_scores(c, r))
+            g = self._ce.combine(c, r, self._ce.pair_scores(c, r))
+            if getattr(self, "_tagger_skipped", False):
+                g.warnings.append(f"chunk {c.index}: entity tagger skipped: it reads the generator's states, which a "
+                                  "served generator does not provide (use a tagger trained on the head's states)")
+            return g
         except Exception as e:  # noqa: BLE001  one bad chunk must not lose the document
             g = to_chunk_graph(c, r.output, {(x.type, x.source, x.target) for x in r.output.relations}, {})
             g.warnings.append(f"chunk {c.index}: head scoring failed ({_why(e)}); generator relations kept unfiltered")
