@@ -31,6 +31,11 @@ remaining misses are mostly relations written inside the noun phrase before a na
 "Republican senator X"). At the point of decision it gives a missed relation a start probability of about 0.19
 against 0.70 for those it writes, and training on completed labels does not change that decision (Section 6).
 
+Taken through the recipe to a new domain (US court opinions, eight relation types, 29 training documents, labelled by
+agents), the system reaches judged F1 0.50: level with a Sonnet labelling pass (0.54) but below an Opus pass (0.74) and
+below the pass mark we set in advance (0.65). It learns its labels (0.68 against them) but is limited by their
+completeness and by recall in dense counsel and caption blocks (Section 5.13).
+
 ## 1. Introduction
 
 Business text states who owns what, who runs what and where companies operate, usually in dense sentences: "Inditex,
@@ -746,6 +751,70 @@ keeps the head's margin and loss and is servable as one-token requests. With gol
 0.838 for the MLP head at the same training budget (0.747 after a quarter of it). vLLM's hidden-state extraction also
 works (the tagger result above) but writes the states to disk per request and does not support the 4-bit format.
 
+### 5.13 A second new domain through the recipe: US court opinions
+
+The government reports (5.9) had labels made before the recipe existed. To test the recipe as a user meets it, a new
+domain went through `docs/quickstart-new-domain.md` step by step, on the local 8 GB card with generation on vLLM.
+
+**Domain and data.** 45 US court opinions filed April to September 2026 (after the base model's training data; none
+from our benchmark pools), each the first 1,000 words of the court's own PDF text: caption, docket, counsel, judges and
+the opening. Courts vary (27 Texas appellate opinions, Delaware, Hawaii, Indiana, immigration appeals and others). A
+schema of five entity types (Person, Org, Court, Case, Place) and eight relation types (PARTY_IN with a role,
+REPRESENTS, JUDGE_IN with a role, SITS_ON, HEARD_BY, APPEAL_FROM, EMPLOYED_BY, LOCATED_IN), each a class with its
+definition, and a page of labelling conventions written before any labelling. Split by document: 29 training (181
+chunks, 704-792 records with sentence windows), 7 validation (43 chunks), 9 test (59 chunks).
+
+**Labels and the measuring stick.** Test was labelled first, twice, independently: pass A by Sonnet agents, pass B by
+Opus agents. Both passes, every model output and planted decoys were pooled and judged claim by claim by two judges of
+different models (decoys accepted 3 of 73 each; disagreement 1-4%). Judged, both labellers are precise (0.98-0.99, each
+confirmed by the judge of the other model) but pass A finds far fewer of the true relations (pooled recall 0.46 against
+0.74 on the first reading of the pool).
+
+**What the model learned from which labeller.** All numbers below are on the final pool (760 claims, 330 judged
+true; 58 test documents). Judged, the Sonnet labelling scores F1 0.535 and the Opus labelling 0.737. Trained on
+Sonnet's labels, the generator alone scored 0.396 and the union with the pair head 0.456 (precision 0.44 to 0.89;
++0.060 paired, 95% -0.000 to +0.126). The model inherits its labeller's completeness. Relabelling training and
+validation with Opus added 51% more relations; the generator alone then found more true relations (137 against 118)
+at the same low precision (0.40), +0.012 F1 (not significant).
+
+**Why precision was low.** Two causes, both measured. (1) Decoding: the generator wrote 35% of its relation lines with
+endpoint types the schema forbids (1,148 lines, 372 illegal, discarded at parsing), in both engines alike. Typed
+decoding, which after the entity lines only allows relation types whose endpoint types fit them, removed all illegal
+lines, kept 481 relations against 420 and wrote a third fewer tokens; judged, recall rose (155 true against 137) at the
+same precision (+0.022 F1, 95% -0.041 to +0.089). (2) Habits carried over from the business schema the base model was
+trained on: EMPLOYED_BY for members of a board the schema treats as a court, LOCATED_IN for any place named near a
+person, REPRESENTS between a party and its leader. The training labels themselves were clean (REPRESENTS was always
+counsel to client), so this is generalisation from 29 documents against a strong prior, not label noise. The pair head,
+trained on the domain's labels, removes most of these.
+
+**Final system and verdict.** The pair head trained on the Opus labels (200 probes per chunk; it did not fit the 8 GB
+card at that size and ran as a one-off job on a rented 24 GB L4, about 80 minutes) with the union cut chosen on
+validation (-4; validation F1 against Opus labels 0.751, generator alone 0.646). On test:
+
+| system | judged precision | pooled recall | judged F1 (95%) | F1 against Opus labels |
+|---|---|---|---|---|
+| generator, typed decoding | 0.40 | 0.47 | 0.429 (0.356-0.495) | 0.446 |
+| union, untyped generator | 0.77 | 0.33 | 0.466 (0.357-0.588) | 0.604 |
+| union, typed generator | 0.77 | 0.37 | **0.500** (0.414-0.594) | 0.682 |
+| labeller, Sonnet (pass A) | 0.99 | 0.37 | 0.535 (0.431-0.626) | |
+| labeller, Opus (pass B) | 0.98 | 0.59 | 0.737 (0.688-0.784) | |
+
+The head adds +0.071 over the typed generator (95% +0.008 to +0.164), and typed decoding helps the union too (+0.034,
+-0.026 to +0.099). We set the pass mark before the first result: judged F1 of at least 0.65 and within 0.10 of a
+labeller. **The court domain does not pass.** The final system is level with the Sonnet labeller (-0.035, -0.135 to
++0.080) but 0.237 below the Opus labeller (-0.329 to -0.132). Against the Opus labels themselves it scores 0.682 on
+test and 0.751 on validation: it learns the labels it is given, but those cover only part of what the text states. The gap
+is recall on the types that need reading a whole caption or counsel block: REPRESENTS (0.34 against the labeller's
+0.96), JUDGE_IN (0.38 against 0.71) and PARTY_IN (0.42 against 0.55). Each counsel line in these texts states two or
+three relations at once, the same list structure that cost recall in Section 5.10 before dense lists were trained.
+
+**What this means for a user.** The recipe runs end to end on a new domain on an 8 GB card. Generation runs on vLLM. Only
+the head at full size needs a larger card. With 29 training documents the result reaches the level of a careful single
+labelling pass, not that of the best labeller. Three lessons carry over. Label with the most complete labeller you can
+afford: the model will not exceed it. Use typed decoding when the schema's endpoint types are strict. And add training
+documents of the structures where recall is lowest, the counsel and caption blocks here, before anything else; that
+step was not run here.
+
 ## 6. Error analysis
 
 **Entities.** On validation the generator misses 150 of 1,981 gold entities (7.6%), which carry 143 gold relations
@@ -863,6 +932,9 @@ alternative (F-coref) scores within noise of it. The system uses two adapters on
 smallest-model goal is not yet met, and whether a much smaller encoder can take over the relation step is an open
 question (Section 9). The changeable-schema head (Section 5.5) reads unseen relation types at 0.29 F1 against 0.80 for
 trained ones, from about 100 described types of training; its held-out numbers are noisy and cover three types.
+The one new domain taken through the full recipe (court opinions, Section 5.13) fell short of its pass mark (judged
+0.50 against 0.65), from 29 training documents and 9 test documents; whether more training documents of the weak
+structures close the gap is untested.
 
 ## 9. Conclusion and outlook
 

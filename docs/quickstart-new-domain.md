@@ -92,8 +92,8 @@ The test set gets a second, independent pass by a different agent (or model) wit
 `gold_test_b`: two passes show how far labellers agree, which is the level a model can be expected to reach.
 
 **Label the test set first, with two labellers, and judge both passes (step 6) before labelling training data.** The
-model learns its labeller's habits, completeness included: on US court opinions a pass that found 46% of the judged-true
-relations taught a model that found 38%, while the other labeller found 74%. Label training and validation with the
+model learns its labeller's habits, completeness included: on US court opinions a pass that found 37% of the judged-true
+relations taught a model that found 36%, while the other labeller found 59%. Label training and validation with the
 labeller whose pass scores higher when judged.
 
 ## 5. Train and evaluate on validation
@@ -115,10 +115,17 @@ ENGINE=vllm RELWEAVE_GEN=path/to/vllm-env/bin/relweave bash path/to/relweave/scr
 ```
 
 Settings by environment variable: `EPOCHS` (3), `LR` (1e-4), `MAX_PROBES` (200 head probes per chunk; 80 fit an 8 GB
-card), `HEAD` (1), `ENGINE` and `RELWEAVE_GEN`. A run that stops (out of memory, a reboot) continues where it stopped
+card), `HEAD` (1), `ENGINE`, `RELWEAVE_GEN` and `TYPED` (0; 1 generates validation and test with typed relation decoding,
+which allows only relation types whose endpoint types fit the listed entities: on court opinions it removed every
+illegal relation line and raised judged F1 by 0.02-0.03; use it when your schema's endpoint types are strict). A run that stops (out of memory, a reboot) continues where it stopped
 when you run the same line again: a step whose output exists is skipped; delete that output to redo it.
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
+
+What to expect: on US court opinions (29 training documents, eight relation types) the union reached judged F1 0.50,
+level with a Sonnet labelling pass and below an Opus pass (0.74); recall was lowest where one block states several
+relations at once (counsel lines). If a type lags, add training documents with more of the structure it lives in
+before changing settings (whitepaper Section 5.13).
 
 ## 5b. Train the entity tagger
 
