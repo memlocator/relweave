@@ -38,6 +38,15 @@ def drop_repeats(raw: str) -> str:
     return "\n".join(out)
 
 
+def _check_finished(outs) -> None:
+    """vLLM reports a request it could not finish (out of memory while sampling, an engine error) as aborted, with
+    whatever text it had; that text is a silently truncated answer, so stop instead."""
+    bad = [o for o in outs if o.outputs and o.outputs[0].finish_reason not in ("stop", "length")]
+    if bad:
+        raise RuntimeError(f"vLLM did not finish {len(bad)} of {len(outs)} requests (finish reason "
+                           f"{bad[0].outputs[0].finish_reason!r}); lower --vllm-memory or --vllm-max-seqs")
+
+
 class VllmExtractor:
     """extract_batch(items) like QwenExtractor; vLLM schedules the batch itself (batch_size is ignored)."""
 
@@ -101,15 +110,23 @@ class VllmExtractor:
         from vllm.inputs import TokensPrompt
         from relweave.generator import ENTITY_LINE
         texts = [o.outputs[0].text for o in first]
+        # the entities-only request ends with the end-of-turn token; the continuation must not include it, or the
+        # model would write its relation lines after its own turn has ended
+        stop = {i for i in (self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>"))
+                if isinstance(i, int)}
         todo = [k for k, (cid, _, _) in enumerate(items) if cid not in entities_only]
         reqs, params = [], []
         for k in todo:
             types = {int(m.group(1)): m.group(2) for line in texts[k].split("\n") if (m := ENTITY_LINE.match(line))}
-            ids = list(first[k].prompt_token_ids) + list(first[k].outputs[0].token_ids)
+            out = list(first[k].outputs[0].token_ids)
+            while out and out[-1] in stop:
+                out.pop()
+            ids = list(first[k].prompt_token_ids) + out
             reqs.append(TokensPrompt(prompt_token_ids=ids))
             params.append(self._params(items[k][1], entity_types=types,
                                        max_tokens=max(self.max_new_tokens - len(first[k].outputs[0].token_ids), 1)))
         outs = self.llm.generate(reqs, params, lora_request=self.lora, use_tqdm=False) if reqs else []
+        _check_finished(outs)
         for k, o in zip(todo, outs):
             texts[k] = texts[k] + o.outputs[0].text
         return texts
@@ -126,6 +143,7 @@ class VllmExtractor:
         outs = self.llm.generate(prompts, [self._params(text, typed or cid in entities_only) for cid, text, _ in items],
                                  lora_request=self.lora,
                                  use_tqdm=False)
+        _check_finished(outs)
         raws = self._typed_relations(items, prompts, outs, entities_only) if typed else [o.outputs[0].text for o in outs]
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []

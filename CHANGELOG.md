@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- **Typed relation decoding on vLLM wrote no relations.** The relation request continued from the entity request's
+  tokens including its end-of-turn token, so the model answered after its own turn had ended. Found on a 24 GB card
+  (validation relation F1 0.000, entities unaffected); typed decoding on transformers was not affected.
+- **vLLM on a large card could run out of memory while sampling.** The plan gave vLLM up to 0.95 of the card, but vLLM's
+  start-up profile does not count the logits and grammar bitmasks of 256 parallel sequences (about 0.3 GB). The plan
+  now keeps 3 MB per parallel sequence out of vLLM's share and caps it at 0.92.
+- **A request vLLM could not finish now raises** instead of returning its truncated text as an answer.
+
 ## 0.4.0
 
 ### Changed

@@ -25,6 +25,10 @@ FORMATS = ("bf16", "fp8", "4bit")
 HEAD_GB = 5.5  # the pair head and tagger next to vLLM: the 4-bit base, two adapters, probe activations
 MAX_NUM_SEQS = 256  # vLLM's default: as parallel as the cache allows
 SMALL_CARD_NUM_SEQS = 32  # fewer CUDA graphs and sampler buffers when memory is tight
+# per parallel sequence, memory vLLM's start-up profile does not count: float32 logits and grammar bitmasks over the
+# 152k-token vocabulary at sampling (256 sequences at 0.95 of a 24 GB card ran out by 0.3 GB, 2026-10-17)
+SAMPLER_GB_PER_SEQ = 0.003
+MAX_SHARE = 0.92
 
 
 @dataclass
@@ -55,7 +59,8 @@ def plan(free_gb: float, total_gb: float, fmt: str = "auto", memory: float | Non
         raise ValueError(f"vLLM format {fmt!r}: one of auto, {', '.join(FORMATS)}")
     kv = budget - WEIGHTS_GB[fmt] - OVERHEAD_GB
     seqs = max_num_seqs or (MAX_NUM_SEQS if kv >= 4 else SMALL_CARD_NUM_SEQS)
-    return VllmPlan(fmt, round(min(budget / total_gb, 0.95), 2), seqs, max_model_len, reason)
+    share = (budget - seqs * SAMPLER_GB_PER_SEQ) / total_gb
+    return VllmPlan(fmt, round(min(share, MAX_SHARE), 2), seqs, max_model_len, reason)
 
 
 def resident_share(free_gb: float, total_gb: float) -> float | None:

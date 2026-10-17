@@ -756,13 +756,18 @@ works (the tagger result above) but writes the states to disk per request and do
 The government reports (5.9) had labels made before the recipe existed. To test the recipe as a user meets it, a new
 domain went through `docs/quickstart-new-domain.md` step by step, on the local 8 GB card with generation on vLLM.
 
-**Domain and data.** 45 US court opinions filed April to September 2026 (after the base model's training data; none
-from our benchmark pools), each the first 1,000 words of the court's own PDF text: caption, docket, counsel, judges and
+**Domain and data.** 45 US court opinions filed 30 September to 9 October 2026 (after the base model's training data;
+none from our benchmark pools), each the first 1,000 words of the court's own PDF text: caption, docket, counsel, judges and
 the opening. Courts vary (27 Texas appellate opinions, Delaware, Hawaii, Indiana, immigration appeals and others). A
 schema of five entity types (Person, Org, Court, Case, Place) and eight relation types (PARTY_IN with a role,
 REPRESENTS, JUDGE_IN with a role, SITS_ON, HEARD_BY, APPEAL_FROM, EMPLOYED_BY, LOCATED_IN), each a class with its
 definition, and a page of labelling conventions written before any labelling. Split by document: 29 training (181
-chunks, 704-792 records with sentence windows), 7 validation (43 chunks), 9 test (59 chunks).
+chunks, 704-792 records with sentence windows), 7 validation (43 chunks), 9 test (59 chunks). The split is by document
+only: 11 people and organisations of the test set (judges of the Texas Fourth Court of Appeals and the Hawaii Supreme
+Court, one federal department) also appear in training documents, in 5 of the 9 test documents. On those 5 the final
+system scores judged F1 0.534, on the other 4 0.449. The Sonnet labelling drops alike (0.574 to 0.478) but the Opus
+labelling does not (0.704 to 0.781), so part of the difference may be memory of names; with 4 and 5 documents the
+split is too small to tell.
 
 **Labels and the measuring stick.** Test was labelled first, twice, independently: pass A by Sonnet agents, pass B by
 Opus agents. Both passes, every model output and planted decoys were pooled and judged claim by claim by two judges of
