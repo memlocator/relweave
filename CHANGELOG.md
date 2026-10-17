@@ -6,7 +6,8 @@
 
 - **Typed relation decoding on vLLM wrote no relations.** The relation request continued from the entity request's
   tokens including its end-of-turn token, so the model answered after its own turn had ended. Found on a 24 GB card
-  (validation relation F1 0.000, entities unaffected); typed decoding on transformers was not affected.
+  (validation relation F1 0.000, entities unaffected); typed decoding on transformers was not affected. Checked after
+  the fix on the same 24 GB card at 256 parallel sequences: 10 chunks, 243 relation lines typed against 159 untyped.
 - **vLLM on a large card could run out of memory while sampling.** The plan gave vLLM up to 0.95 of the card, but vLLM's
   start-up profile does not count the logits and grammar bitmasks of 256 parallel sequences (about 0.3 GB). The plan
   now keeps 3 MB per parallel sequence out of vLLM's share and caps it at 0.92.
