@@ -142,7 +142,7 @@ class LabelHead(torch.nn.Module):
         return cls(rows, token_ids)
 
     def forward(self, x):
-        return x.float() @ self.w.float().T
+        return x.to(self.w.device).float() @ self.w.float().T  # callers may keep probe states on the CPU
 
 
 class Head(torch.nn.Module):
