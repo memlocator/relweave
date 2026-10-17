@@ -31,10 +31,10 @@ remaining misses are mostly relations written inside the noun phrase before a na
 "Republican senator X"). At the point of decision it gives a missed relation a start probability of about 0.19
 against 0.70 for those it writes, and training on completed labels does not change that decision (Section 6).
 
-Taken through the recipe to a new domain (US court opinions, eight relation types, 29 training documents, labelled by
-agents), the system reaches judged F1 0.50: level with a Sonnet labelling pass (0.54) but below an Opus pass (0.74) and
-below the pass mark we set in advance (0.65). It learns its labels (0.68 against them) but does not exceed its
-labeller, and misses relations in dense counsel and caption blocks (Section 5.13).
+Taken through the recipe to a new domain (US court opinions, eight relation types, labelled by agents), the system
+reaches judged F1 0.50 from 29 training documents and 0.55 from 64: level with a Sonnet labelling pass (0.52-0.54) but
+below an Opus pass (0.72-0.74) and below the pass mark we set in advance (0.65). It learns its labels (0.71 against
+them) but does not exceed its labeller, and misses relations in dense counsel and caption blocks (Section 5.13).
 
 ## 1. Introduction
 
@@ -815,12 +815,36 @@ is recall on the types that need reading a whole caption or counsel block: REPRE
 0.96), JUDGE_IN (0.38 against 0.71) and PARTY_IN (0.42 against 0.55). Each counsel line in these texts states two or
 three relations at once, the same list structure that cost recall in Section 5.10 before dense lists were trained.
 
+**Round 2: more training documents.** 35 further opinions from the same filing window (40 fetched; 4 dropped
+because they name a person or organisation of the test set, 1 that is not an opinion), labelled by Opus agents under
+the same conventions (252 chunks, 883 relations), were added to the training set: 64 documents, 1,803 records. The
+whole recipe ran again from the shared base on a rented 24 GB L4 (3 epochs, 200 head probes, generation on vLLM with
+typed decoding; validation and test once more after a vLLM bug was fixed, see the 0.4.2 changelog). The cut chosen on
+validation was -2 (validation F1 against the Opus labels 0.786, generator alone 0.616; round 1 0.751 and 0.646). The
+round-2 claims went into the same pool (786 claims, 342 judged true; only 26 claims were new), which rescored round 1
+slightly lower:
+
+| system (pool of 786 claims) | judged precision | pooled recall | judged F1 (95%) | F1 against Opus labels |
+|---|---|---|---|---|
+| round 1: union, typed generator, 29 documents | 0.77 | 0.36 | 0.488 (0.405-0.582) | 0.682 |
+| round 2: union, typed generator, 64 documents | 0.83 | 0.42 | **0.554** (0.431-0.641) | 0.707 |
+| labeller, Sonnet (pass A) | 0.99 | 0.35 | 0.522 (0.422-0.607) | |
+| labeller, Opus (pass B) | 0.98 | 0.57 | 0.721 (0.671-0.768) | |
+
+Doubling the training documents added +0.066 (95% -0.045 to +0.166, paired), the size we expected beforehand (+0.03
+to +0.06) and not significant on 9 test documents. Round 2 is level with the Sonnet labeller (+0.032, -0.022 to
++0.088) and 0.167 below the Opus labeller (+0.067 to +0.305). **The court domain still does not pass.** The weak types
+gained most: JUDGE_IN 0.36 to 0.60, REPRESENTS 0.34 to 0.40, PARTY_IN 0.42 to 0.46 (the Opus labeller: 0.67, 0.96,
+0.55). Two things changed at once: the training data and the engine (round 1 generated on transformers, round 2 on
+vLLM). On the 26 unseen benchmark documents vLLM scored +0.017 against transformers (95% 0.000 to +0.045, Section 5.12), so the
+engine is unlikely to account for a loss, but it was not measured on this domain.
+
 **What this means for a user.** The recipe runs end to end on a new domain on an 8 GB card. Generation runs on vLLM. Only
-the head at full size needs a larger card. With 29 training documents the result reaches the level of a careful single
-labelling pass, not that of the best labeller. Three lessons carry over. The model did not exceed its labeller, and a
+the head at full size needs a larger card. With 29 or 64 training documents the result reaches the level of a careful
+single labelling pass, not that of the best labeller, and doubling the documents moved it by about +0.07. Three lessons carry over. The model did not exceed its labeller, and a
 more complete labeller alone did not lift it measurably at this size. Use typed decoding when the schema's endpoint types are strict. And add training
-documents of the structures where recall is lowest, the counsel and caption blocks here, before anything else; that
-step was not run here.
+documents of the structures where recall is lowest, the counsel and caption blocks here, before adding more of
+everything: round 2 added whole opinions, and the counsel types gained least.
 
 ## 6. Error analysis
 
@@ -940,8 +964,8 @@ smallest-model goal is not yet met, and whether a much smaller encoder can take 
 question (Section 9). The changeable-schema head (Section 5.5) reads unseen relation types at 0.29 F1 against 0.80 for
 trained ones, from about 100 described types of training; its held-out numbers are noisy and cover three types.
 The one new domain taken through the full recipe (court opinions, Section 5.13) fell short of its pass mark (judged
-0.50 against 0.65), from 29 training documents and 9 test documents; whether more training documents of the weak
-structures close the gap is untested.
+0.55 against 0.65 from 64 training documents, 0.50 from 29), on 9 test documents; whether training documents
+targeted at the weak structures close the gap is untested.
 
 ## 9. Conclusion and outlook
 

@@ -125,10 +125,11 @@ when you run the same line again: a step whose output exists is skipped; delete 
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
 
-What to expect: on US court opinions (29 training documents, eight relation types) the union reached judged F1 0.50,
-level with a Sonnet labelling pass and below an Opus pass (0.74); recall was lowest where one block states several
-relations at once (counsel lines). If a type lags, add training documents with more of the structure it lives in
-before changing settings (whitepaper Section 5.13).
+What to expect: on US court opinions (eight relation types) the union reached judged F1 0.50 from 29 training
+documents and 0.55 from 64, level with a Sonnet labelling pass and below an Opus pass (0.72); doubling the documents
+moved it by about +0.07. Recall was lowest where one block states several relations at once (counsel lines). If a
+type lags, add training documents with more of the structure it lives in before adding more of everything or changing
+settings (whitepaper Section 5.13).
 
 ## 5b. Train the entity tagger
 
