@@ -55,14 +55,17 @@ class TypedRelationGrammar:
     grammar once that row's entity lines are complete."""
 
     def __init__(self, compiler, fmt, texts: list[str], tokenizer, vocab_size: int, typed: bool = True,
-                 stop_on_repeat: bool = False, stop_bias: float = 0.0, grounded: bool = False):
+                 stop_on_repeat: bool = False, stop_bias: float = 0.0, grounded: bool = False,
+                 entities_only: list[bool] | None = None):
         import xgrammar as xgr
         self.xgr, self.compiler, self.fmt, self.tok = xgr, compiler, fmt, tokenizer
         self.typed, self.stop_on_repeat, self.stop_bias, self.grounded = typed, stop_on_repeat, stop_bias, grounded
         self.stop_ids = [tokenizer.convert_tokens_to_ids("<|im_end|>"), tokenizer("S", add_special_tokens=False)["input_ids"][0]]
-        self.rows = [{"m": xgr.GrammarMatcher(fmt.compile(compiler, t)), "ids": [], "typed": not typed,
-                      "n": fmt.grammar_key(t), "all_ids": [], "seen": set(), "force_stop": False, "text": t}
-                     for t in texts]
+        only = entities_only or [False] * len(texts)  # a row with entity lines only never switches grammar
+        self.rows = [{"m": xgr.GrammarMatcher(compiler.compile_grammar(fmt.ebnf_for(0)) if o else fmt.compile(compiler, t)),
+                      "ids": [], "typed": o or not typed, "n": 0 if o else fmt.grammar_key(t), "all_ids": [],
+                      "seen": set(), "force_stop": False, "text": t}
+                     for t, o in zip(texts, only)]
         self.bitmask = xgr.allocate_token_bitmask(len(texts), vocab_size)
         self.first = True
         self.switched = self.fallbacks = 0
@@ -195,11 +198,16 @@ class QwenExtractor:
         if self.adapter_name is not None:
             self.model.set_adapter(self.adapter_name)
 
-    def _grammar_for(self, chunk_text: str):
-        """Compiled grammar for this chunk; formats with per-chunk grammars are cached by key."""
+    def _grammar_for(self, chunk_text: str, entities_only: bool = False):
+        """Compiled grammar for this chunk; formats with per-chunk grammars are cached by key. entities_only: entity
+        lines and the end, no relation blocks (the sentences grammar with zero blocks)."""
         if self._compiler is None:
             return None
         fmt = self.format
+        if entities_only and hasattr(fmt, "ebnf_for"):
+            if "entities_only" not in self._grammars:
+                self._grammars["entities_only"] = self._compiler.compile_grammar(fmt.ebnf_for(0))
+            return self._grammars["entities_only"]
         key = fmt.grammar_key(chunk_text)
         if key not in self._grammars:
             self._grammars[key] = fmt.compile(self._compiler, chunk_text)
@@ -231,8 +239,10 @@ class QwenExtractor:
         raw = self.tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         return finish(chunk_id, chunk_text, raw, seconds, fmt=self.fmt, schema=self.schema)
 
-    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 8) -> list[ExtractionResult]:
-        """Extract many chunks with batched, grammar-constrained generation.
+    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 8,
+                      entities_only: frozenset = frozenset()) -> list[ExtractionResult]:
+        """Extract many chunks with batched, grammar-constrained generation. Chunks whose key is in entities_only get
+        entity lines only (their relations come from the pair head).
 
         Chunks are grouped by prompt length to limit padding; each row gets its own
         compiled grammar. Results come back in the input order. Per-chunk `seconds` is
@@ -255,13 +265,14 @@ class QwenExtractor:
                               repetition_penalty=self.repetition_penalty)
             if self.temperature > 0:
                 gen_kwargs.update(do_sample=True, temperature=self.temperature, top_p=0.95)
-            grammars = [self._grammar_for(text) for _, text in batch]
+            grammars = [self._grammar_for(text, cid in entities_only) for cid, text in batch]
             controlled = self.typed_relations or self.stop_on_repeat or self.stop_bias
             if controlled and self.fmt in ("sentences", "counted") and self._compiler is not None:
                 gen_kwargs["logits_processor"] = [TypedRelationGrammar(
                     self._compiler, self.format, [text for _, text in batch], self.tokenizer,
                     self.model.config.vocab_size, typed=self.typed_relations,
-                    stop_on_repeat=self.stop_on_repeat, stop_bias=self.stop_bias, grounded=self.grounded)]
+                    stop_on_repeat=self.stop_on_repeat, stop_bias=self.stop_bias, grounded=self.grounded,
+                    entities_only=[cid in entities_only for cid, _ in batch])]
             elif all(g is not None for g in grammars):
                 import xgrammar as xgr
                 gen_kwargs["logits_processor"] = [xgr.contrib.hf.LogitsProcessor(grammars)]

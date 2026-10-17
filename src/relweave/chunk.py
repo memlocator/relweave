@@ -30,6 +30,7 @@ class Chunk:
     start: int  # character offsets into the document
     end: int
     context: str = ""  # lines from before the chunk the model needs to read it (a table's header row, its heading)
+    dense: bool = False  # cut from a dense block (a list, table or key-value block longer than dense_words; _dense)
 
     @property
     def model_text(self) -> str:
@@ -207,7 +208,8 @@ def chunk(text: str, max_words: int = MAX_WORDS, dense_words: int | None = DENSE
         else:
             run.append(p)
     flush()
-    return [Chunk(i, text[a:b], a, b, _context(text, a, block) if block is not None else "")
+    return [Chunk(i, text[a:b], a, b, _context(text, a, block) if block is not None else "",
+                  dense=block is not None)
             for i, ((a, b), block) in enumerate(spans)]
 
 

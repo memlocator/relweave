@@ -164,3 +164,11 @@ def test_dense_list_chunks_carry_the_lead_line():
     cs = [c for c in chunk(text) if "- Person" in c.text]
     assert len(cs) > 1 and all(lead in c.model_text for c in cs)
     assert all(text[c.start:c.end] == c.text for c in chunk(text))
+
+
+def test_list_and_table_chunks_are_marked_dense():
+    from relweave.chunk import chunk
+    text = "Acme reported results for the year.\n\nThe board:\n- Amalie Bjerknes\n- Birger Krogvig\n- Cornelia Rygh"
+    cs = chunk(text, max_words=200, dense_words=4)
+    assert [c.dense for c in cs] == [False] + [True] * (len(cs) - 1) and len(cs) > 1
+    assert not any(c.dense for c in chunk(text, max_words=200, dense_words=None))  # layout chunking off: all prose

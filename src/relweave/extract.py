@@ -206,7 +206,7 @@ supplies the prompt settings and tokenizer."""
     def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
                  margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None,
-                 share_base: bool = True):
+                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None):
         from relweave import union as un
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
@@ -223,6 +223,11 @@ supplies the prompt settings and tokenizer."""
         union_cfg = self.head_config.get("union", {})
         self.cut = cut if cut is not None else union_cfg.get("cut", un.CUT)
         self.margin = margin if margin is not None else union_cfg.get("margin", un.MARGIN)
+        # dense chunks (lists, tables): the generator writes entity lines only and the head every relation, at its own
+        # margin; chosen on validation (head config "union") and saved with the head, or set by the caller
+        self.dense_entities_only = dense_entities_only if dense_entities_only is not None \
+            else union_cfg.get("dense_entities_only", False)
+        self.dense_margin = dense_margin if dense_margin is not None else union_cfg.get("dense_margin")
         # the base the adapters were trained on (exported config), unless the caller names one
         self.model, self.group = model or settings.get("base_model", DEFAULT_MODEL), group
         self.generator_url = generator_url
@@ -344,10 +349,12 @@ supplies the prompt settings and tokenizer."""
             free = min(free, int(budget))
         return pick_batch(free, row)
 
-    def generate_many(self, items: list[tuple[str, str]], batch_size: int | str = "auto") -> dict:
+    def generate_many(self, items: list[tuple[str, str]], batch_size: int | str = "auto",
+                      entities_only: frozenset = frozenset()) -> dict:
         """key -> ExtractionResult (or the exception of a chunk that failed) for (key, text) items, in batches of
         similar length. On CUDA OOM the batch is retried at half the size (down to 1); a chunk that fails alone keeps
-        its exception; no chunk is lost."""
+        its exception; no chunk is lost. Keys in entities_only get entity lines only."""
+        extra = {"entities_only": frozenset(entities_only)} if entities_only else {}
         import torch
         self.load_generator()
         if self.generator_url:  # the server batches; one call per 256 chunks keeps a failure's retry small
@@ -360,7 +367,7 @@ supplies the prompt settings and tokenizer."""
         while k < len(order):
             batch = order[k:k + b]
             try:
-                results = self._gen.extract_batch(batch, batch_size=len(batch))
+                results = self._gen.extract_batch(batch, batch_size=len(batch), **extra)
             except Exception as e:  # noqa: BLE001  one bad chunk must not lose the others (OOM is one too)
                 err = e
             else:
@@ -379,7 +386,7 @@ supplies the prompt settings and tokenizer."""
                 for it in batch:
                     key = it[0]
                     try:
-                        out[key] = self._gen.extract_batch([it], batch_size=1)[0]
+                        out[key] = self._gen.extract_batch([it], batch_size=1, **extra)[0]
                     except Exception as e:  # noqa: BLE001
                         out[key] = e
                 k += len(batch)
@@ -472,7 +479,9 @@ supplies the prompt settings and tokenizer."""
     def combine(self, chunk: Chunk, result, scores: dict[str, float]) -> ChunkGraph:
         """Union of the generator's relations and the head's scores, as a ChunkGraph."""
         from relweave.union import union
-        final = union({result.chunk_id: result}, {result.chunk_id: scores}, self.cut, self.margin,
+        margin = self.dense_margin if chunk.dense and self.dense_entities_only and self.dense_margin is not None \
+            else self.margin  # entities-only chunks: every relation is the head's
+        final = union({result.chunk_id: result}, {result.chunk_id: scores}, self.cut, margin,
                       schema=self.schema)[result.chunk_id]
         final = self._try_other_types(chunk, result, final)
         written = {(x.type, x.source, x.target) for x in result.output.relations}

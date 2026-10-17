@@ -47,18 +47,19 @@ class RemoteExtractor:
         self.name = f"qwen_finetuned_{fmt}_remote"
         self.tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))  # the chat template the generator was trained with
 
-    def _one(self, item: tuple) -> ExtractionResult:
+    def _one(self, item: tuple, entities_only: bool = False) -> ExtractionResult:
         cid, text, known = (*item, None)[:3]  # (key, text) or (key, text, known entity lines)
         prompt = generation_prompt(self.tokenizer, chat_messages(text, self.fmt, compact=self.compact,
                                                                  schema=self.schema, conditioned=self.conditioned,
                                                                  known=known))
         t0 = time.perf_counter()
         body = {"model": self.model, "prompt": prompt, "max_tokens": self.max_new_tokens, "temperature": 0.0,
-                "structured_outputs": {"grammar": self.format.ebnf_for(self.format.grammar_key(text))}}
+                "structured_outputs": {"grammar": self.format.ebnf_for(0 if entities_only else self.format.grammar_key(text))}}
         raw = _post(self.url, body, self.timeout)["choices"][0]["text"]
         return finish(cid, text, drop_repeats(raw) if self.stop_on_repeat else raw, time.perf_counter() - t0,
                       fmt=self.fmt, schema=self.schema)
 
-    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0) -> list[ExtractionResult]:
+    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0,
+                      entities_only: frozenset = frozenset()) -> list[ExtractionResult]:
         with ThreadPoolExecutor(self.concurrency) as pool:
-            return list(pool.map(self._one, items))
+            return list(pool.map(lambda it: self._one(it, it[0] in entities_only), items))

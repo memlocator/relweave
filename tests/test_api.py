@@ -21,8 +21,9 @@ class FakeCE:
     def load_head(self):
         self.log.append("load head")
 
-    def generate_many(self, items, batch_size):
+    def generate_many(self, items, batch_size, entities_only=frozenset()):
         self.batches.append([k for k, _ in items])
+        self.entities_only = entities_only
         from relweave.schema import ExtractionOutput
         return {k: RuntimeError("boom") if int(k.split(":")[1]) in self.fail_gen
                 else types.SimpleNamespace(output=ExtractionOutput(), error=None, raw="") for k, _ in items}
@@ -188,7 +189,7 @@ def test_carry_forward_generates_in_rounds_with_each_documents_own_known_entitie
     seen = []
 
     class CarryCE(FakeCE):
-        def generate_many(self, items, batch_size):
+        def generate_many(self, items, batch_size, entities_only=frozenset()):
             seen.append([(k, known) for k, _, known in items])
             out = {}
             for k, text, known in items:
@@ -211,3 +212,14 @@ def test_carry_forward_generates_in_rounds_with_each_documents_own_known_entitie
 def test_resolve_head_keeps_a_local_directory(tmp_path):
     from relweave.extract import resolve_head
     assert resolve_head(tmp_path) == tmp_path
+
+
+def test_dense_chunks_get_entity_lines_only_when_the_mode_is_on():
+    text = "Acme reported results.\n\nThe board:\n- Amalie Bjerknes\n- Birger Krogvig\n- Cornelia Rygh"
+    for on, want in ((True, {"0:1", "0:2", "0:3", "0:4"}), (False, set())):
+        ce = FakeCE()
+        ce.dense_entities_only = on
+        e = make(ce)
+        e.max_words, e.dense_words = 200, 4
+        e.run(text)
+        assert set(ce.entities_only) == want

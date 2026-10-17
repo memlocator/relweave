@@ -45,7 +45,11 @@ class Extractor:
 
     A model that cannot be loaded, or a generator that fails on every chunk, raises RuntimeError. A single chunk that
     fails (unparseable output, CUDA OOM at batch 1) becomes a warning in Graph.warnings and the document continues;
-    a chunk the head could not score keeps the generator's relations unfiltered."""
+    a chunk the head could not score keeps the generator's relations unfiltered.
+
+    dense_entities_only: on dense chunks (lists, tables, key-value blocks) the generator writes entity lines only and
+    the pair head supplies every relation, at dense_margin; much faster on lists and tables, where most generated
+    tokens are relation lines. None takes the head's saved setting (chosen on validation), default off."""
 
     _zs = None  # the zero-shot adapter (zeroshot=True)
     carry = False  # carry-forward generation (earlier chunks' entities in the prompt)
@@ -56,7 +60,7 @@ class Extractor:
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False,
-                 share_base: bool = True):
+                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         self._tagger = None
@@ -91,7 +95,8 @@ class Extractor:
             self._zs, self.threshold, self.schema = ZeroShot(zeroshot_weights or DEFAULT_WEIGHTS), threshold, user
         else:
             self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
-                                         generator_url=generator_url, share_base=share_base)
+                                         generator_url=generator_url, share_base=share_base,
+                                         dense_entities_only=dense_entities_only, dense_margin=dense_margin)
             self.schema = self._ce.schema
         if dense_words is None:  # the head says which chunk size it was trained to read tables and lists in
             cfg = getattr(self._ce, "head_config", None) or {}
@@ -129,10 +134,12 @@ class Extractor:
         doc_ids = doc_ids or [f"document{k}" if len(texts) > 1 else "document" for k in range(len(texts))]
         chunked = [chunk(t, self.max_words, getattr(self, "dense_words", DENSE_WORDS)) for t in texts]
         items = [(f"{d}:{c.index}", c.model_text) for d, chunks in enumerate(chunked) for c in chunks]
+        only = frozenset(f"{d}:{c.index}" for d, chunks in enumerate(chunked) for c in chunks if c.dense) \
+            if getattr(ce, "dense_entities_only", False) else frozenset()
         try:
             _load(ce.load_generator, "generator")
             generated = self._generate_carried(chunked) if self.carry else (
-                ce.generate_many(items, self.batch_size) if items else {})
+                ce.generate_many(items, self.batch_size, entities_only=only) if items else {})
             tagger = getattr(self, "_tagger", None)
             self._tagger_skipped = False
             if tagger is not None and tagger.reads == "generator":
