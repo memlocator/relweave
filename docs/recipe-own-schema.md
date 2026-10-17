@@ -343,7 +343,10 @@ relweave generate data/projects/gold_train/train.jsonl --schema projects.py:PROJ
 ```
 
 The prompt settings come from the generator directory. `--batch-size` defaults to `auto` (the largest of 1, 2, 4 or 8
-that fits the free GPU memory, halved on out-of-memory). Repetition loops are cut off as in production.
+that fits the free GPU memory, halved on out-of-memory). Repetition loops are cut off as in production. With
+`--engine vllm` (run from an environment with vLLM, README "Faster: the generator on vLLM") the same command runs on
+vLLM, several times faster, in the format and parallelism your GPU allows; `--vllm-format`, `--vllm-memory` and
+`--vllm-max-seqs` override. The results are the same within noise (whitepaper, Section 5.12).
 
 Do the same for validation and test. These runs are the generator-alone baseline and the input to head scoring:
 

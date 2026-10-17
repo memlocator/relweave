@@ -9,8 +9,8 @@ reasons behind the steps are in [recipe-new-domain.md](recipe-new-domain.md); th
 Worked through once on Swedish government reports (new types Inquiry and Report, ten relation types): judged F1 0.92,
 level with two labelling passes (recipe-new-domain.md, section 11).
 
-**You need:** 30-50 documents of your kind (more is better), a GPU with 8 GB or more for the generator (24 GB for the
-head with 200 probes; or a rented one), an agent that can read and write files (labelling and judging), and Python 3.11
+**You need:** 30-50 documents of your kind (more is better), a GPU with 8 GB or more (24 GB for the head with 200
+probes, and for vLLM to run many sequences at once; or a rented one), an agent that can read and write files (labelling and judging), and Python 3.11
 with `pip install "relweave[train]"`.
 
 All commands run in one directory, `mydomain/` below, holding your schema module and your data.
@@ -97,10 +97,21 @@ The test set gets a second, independent pass by a different agent (or model) wit
 bash path/to/relweave/scripts/train_domain.sh mydomain.py:MYDOMAIN
 ```
 
-It trains the generator from relweave-4b-base, runs it on validation and test, trains the pair head, and prints the
-validation scores of the generator alone and of the union at several cuts (`runs/summary.txt`). It times generation
-first and prints how long the head's part will take (on an A10G about 10 s per training chunk; `HEAD=0` skips the head
-and halves the run). On a rented GPU (a Hugging Face job, a cloud box), copy the directory there and run the same line.
+It trains the generator from relweave-4b-base, runs it on validation and test, trains the pair head and the entity
+tagger, and prints the validation scores of the generator alone and of the union at several cuts (`runs/summary.txt`).
+It times generation first and prints how long the head's part will take (`HEAD=0` skips the head and halves the run).
+On a rented GPU (a Hugging Face job, a cloud box), copy the directory there and run the same line.
+
+Generation (on validation, test and every training chunk, for the head) is the slow part; on vLLM it is several times
+faster. Install vLLM in its own environment (README, "Faster: the generator on vLLM") and point the script at it:
+
+```bash
+ENGINE=vllm RELWEAVE_GEN=path/to/vllm-env/bin/relweave bash path/to/relweave/scripts/train_domain.sh mydomain.py:MYDOMAIN
+```
+
+Settings by environment variable: `EPOCHS` (3), `LR` (1e-4), `MAX_PROBES` (200 head probes per chunk; 80 fit an 8 GB
+card), `HEAD` (1), `ENGINE` and `RELWEAVE_GEN`. A run that stops (out of memory, a reboot) continues where it stopped
+when you run the same line again: a step whose output exists is skipped; delete that output to redo it.
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
 
@@ -157,6 +168,7 @@ and include it in the pool as above.
 ```bash
 relweave run new_document.txt --out graph.json --generator runs/gen --head runs/head --schema mydomain.py:MYDOMAIN \
   --entity-tagger runs/tagger --cut -4   # the cut you chose on validation in step 5
+# faster, from the vLLM environment: the same line with --engine vllm (format and parallelism chosen for your GPU)
 ```
 
 When it misses things, read recipe-new-domain.md section 10 before adding data: find where relations are lost first.

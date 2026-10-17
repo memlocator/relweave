@@ -622,8 +622,14 @@ relation head can only judge pairs of entities it is given, so it cannot repair 
 **An entity head.** The encoder property the generator lacks for entities is labelling every token in
 one pass. The design: a small tagger (BIO over Person, Org, Place) on the frozen generator's hidden states, with no
 list to stop and no per-chunk cap. A decoder token cannot see the rest of its own name ("Kelvorn" before "Pumps
-GmbH"), so the input is fed twice and the second copy is tagged: every token there has read the whole text (echo
-embeddings, Springer et al. 2024). The entities it tags would replace the generator's entity list; the relation head
+GmbH"), so the first tagger fed the input twice and tagged the second copy, where every token has read the whole text
+(echo embeddings, Springer et al. 2024). A controlled comparison later showed the echo unnecessary: a tagger reading
+the text once, each token from its own states only, matched or beat it (entity recall on written lists 0.994 against
+0.994, lead-sentence lists 0.982 against 0.967 with higher precision, annual report 0.955 both, cabinet people 0.984
+against 0.974) at half the tokens. A BIO tag rarely needs the future: the first word of a name is tagged as a start
+from the lead sentence and the word itself, and each later word has already read the earlier ones. Giving each token
+also the states of the next two tokens hurt (lead lists 0.880): the line-break token after a list item, seeing the next
+name, was pulled into the span. The entities it tags would replace the generator's entity list; the relation head
 would then score every pair over the whole document, which needs the head trained on varied lengths up to whole
 documents and the document's key/value states computed once and reused for all pair probes. Together these would
 remove the need for layout-aware chunking. Trained on 2,673 labelled chunks (3 epochs, about 20 minutes on one
@@ -638,13 +644,71 @@ End to end, the tagger's entities are added to each chunk's entity lines before 
 generator's anti-loop cap of 40 per chunk, which dense list chunks reach on their own. With a separate cap, relation
 F1 rose from 0.805 to 0.857 on written lists (recall 0.70 to 0.90) and from 0.907 to 0.933 on lead-sentence lists
 (precision 1.00); on the annual report the tagged countries were linked as OPERATES_IN, which two judges accept for a
-"Country" column (judged F1 0.870 against 0.791 without the tagger). Trained on name mentions only and snapping spans to whole words, the tagger found 0.855 of the
-labelled entities in 11 real SOU reports against 0.747 for the government model, but tags law titles kept in Swedish
-as names, which the schema does not count.
+"Country" column (judged F1 0.870 against 0.791 without the tagger). The tagger is trained on name mentions only (the
+name and mentions sharing a capitalised word with it, never "the company" or "he"), with spans snapped to whole words
+and ended at line breaks.
 
 On the 26 unseen news, DOJ and court documents the tagger changes nothing measurable (judged F1 0.718 against
 0.713, paired +0.005, 95% -0.048 to +0.063): it costs no precision on prose and recovers the names lists lose. It is
 published with relweave-4b-base (`tagger/`) and on by default from relweave 0.3; each chunk is read a second time.
+
+**Tagger precision, judged.** Gold label files list only the entities that take part in labelled relations, so a
+tagged span missing from them may still be a real name. Precision was therefore judged: the spans of the compared
+tagger variants were pooled per document, spans matching a gold name counted as right, and every other span went,
+without its source, to two independent LLM judges with the document and five verdicts (an entity of the tagged type;
+a real entity of another type; a real name of something the schema does not cover; a fragment or a name with extra
+words; not a name). A span counts as right only when both judges say so; disagreements count as wrong (a floor).
+On business prose and Swedish government reports, read by the business tagger, strict precision was only 0.30-0.34
+(judges agree 92%): references and descriptions ("the company", "founder", "Government"), stray articles, and
+fragments of long names. Part of this came from the label rule, which had kept any mention sharing a lower-cased word
+with the name ("the company" for "Acme Company"); a rule requiring a shared capitalised word fixed the labels. A tagger
+retrained with the fixed rule on 540 government training chunks, read on 11 government reports it never saw, kept its
+recall (0.83 of 327 labelled entities) and was precise on names (Person 0.87, Place 1.00) but not on long titles
+(Report 0.05, Inquiry 0.13: a twelve-word Swedish title tagged token by token survives whole only if every token is
+right, about 0.95^12 = 54% at 95% per-token accuracy; the generator writes a name as one decision). The judges agreed
+on only 64% of these spans. On the same reports the government generator found as many labelled entities (0.826) with
+a third of the spans; the union of both raised entity recall to 0.917. The tagger is therefore an addition to the
+generator's entities, for lists and tables and for names the generator misses, not a replacement for them on prose.
+
+### 5.11 Reading whole documents
+
+Chunks exist because the generator writes a list that can end early. The tagger and the pair head have no list: the
+tagger labels every token, the head scores every pair. The question is whether they keep their quality when they read a
+whole document in one pass instead of 200-word chunks, untrained for long input.
+
+**Method.** Gold entities are given (the relation step alone). The head scores every legal entity pair twice: with the
+whole document as one context, and chunk by chunk as relweave reads it (a chunk sees the entities mentioned in it; a
+relation counts if any chunk scores it above the margin). Each gold relation gets a distance: how far, in words, the
+sentence stating it lies from the nearest place the text names each of its two entities by name (not by "the company"
+or "she"), the larger of the two. Recall is reported per distance band, precision against the gold, at several margins.
+Two variants of the entity lines: names plus the references the labels list (the gold then does the coreference), and
+names only (any link from "the company" to its name must come from the model). Six synthetic business documents of
+about 1,600 words (2,100 tokens), written with entities named once and referred to afterwards; the head was never
+trained on them.
+
+| entity lines | reading | 0-30 words | 30-150 | 150-600 | 600+ | best F1 (margin) |
+|---|---|---|---|---|---|---|
+| names and references | whole document | 0.67 | 0.70 | 0.79 | 0.82 | 0.813 (0) |
+| names and references | chunks | 0.77 | 0.83 | 0.88 | 0.97 | 0.834 (+0.5) |
+| names only | whole document | 0.69 | 0.77 | 0.71 | 0.53 | 0.769 (-1) |
+| names only | chunks | 0.79 | 0.40 | 0.04 | 0.00 | 0.535 (+1) |
+
+(recall at the shipped margin +0.5; 61, 30, 24 and 38 relations per band.) Reading a whole document costs recall in
+every band, short ones included, and mostly as a downward shift of the scores: at margin 0 instead of +0.5 the whole
+document is 0.021 F1 behind chunks, within noise at 153 relations (the margin was chosen on the same set, so this is
+optimistic). With names only, chunks find nothing whose name lies outside the chunk, while the whole-document head
+links "the group" to its name across hundreds of words by itself (0.71 at 150-600 words, 0.53 beyond 600). Listing the
+references is worth about 0.04 F1, most of it beyond 600 words: that is what a coreference step could still add.
+
+The tagger, read the same way on the same documents and on eleven government reports of up to 7,084 tokens, loses
+nothing on whole documents (entity recall 0.912 against 0.876 in 300-word windows on the business documents, 0.862
+against 0.859 on the reports, flat over the position in the document), but it tags more spans that are not names.
+A head trained only alongside the generator (the government model's) scores weakly on its own in either mode (recall at
+most 0.29 chunked), so long real reports could not separate the effect of length for the head.
+
+A whole 7,000-token document fits an 8 GB card when only the layers read are kept (two of 37), vocabulary scores are
+computed for the last token only and no key/value cache is built (the default forward pass keeps all of them, about
+1.4 GB for the hidden states alone).
 
 ## 6. Error analysis
 
