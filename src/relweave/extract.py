@@ -404,7 +404,7 @@ supplies the prompt settings and tokenizer."""
         extra = {"entities_only": frozenset(entities_only)} if entities_only else {}
         import torch
         self.load_generator()
-        if self.generator_url:  # the server batches; one call per 256 chunks keeps a failure's retry small
+        if self.generator_url or self.engine == "vllm":  # vLLM batches itself; 256 chunks a call keeps a retry small
             b = 256
         else:
             b = self.auto_batch(items) if batch_size == "auto" else int(batch_size)

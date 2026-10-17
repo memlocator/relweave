@@ -28,3 +28,17 @@ def test_a_served_lora_generator_is_asked_by_name():
     from relweave.remote import pick_model
     assert pick_model(["unsloth/qwen3-4b-unsloth-bnb-4bit", "generator"]) == "generator"
     assert pick_model(["chrullis/relweave-4b-base"]) == "chrullis/relweave-4b-base"
+
+
+def test_vllm_engine_hands_vllm_whole_batches():
+    import types
+
+    from relweave.extract import ChunkExtractor
+    ce = ChunkExtractor.__new__(ChunkExtractor)
+    ce.generator_url, ce.engine = None, "vllm"
+    seen = []
+    ce.load_generator = lambda: None
+    ce._gen = types.SimpleNamespace(extract_batch=lambda items, batch_size, **kw: seen.append(len(items)) or
+                                    [types.SimpleNamespace() for _ in items])
+    ce.generate_many([(f"k{i}", "text") for i in range(10)])
+    assert seen == [10]
