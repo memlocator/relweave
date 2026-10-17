@@ -24,6 +24,8 @@ ENGINE_HELP = "auto (vLLM when installed, else transformers), vllm (the generato
 VLLM_FORMAT_HELP = "vLLM weight format: auto (the most precise that fits), bf16, fp8 or 4bit"
 VLLM_MEMORY_HELP = "vLLM's share of the GPU (default: what the card allows)"
 VLLM_SEQS_HELP = "sequences vLLM generates at once (default: as many as fit)"
+TYPED_HELP = ("relation lines only of types whose endpoint types fit the entity lines written (worth it when the "
+              "schema's endpoint types are strict)")
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -71,6 +73,8 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
         vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
         vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
+        typed_relations: bool | None = typer.Option(None, "--typed-relations/--untyped-relations",
+                                                    help=TYPED_HELP + " (default: the head's saved setting, else off)"),
         no_entity_tagger: bool = typer.Option(False, help="run without the entity tagger (faster; long lists and tables lose names)"),
         dense_words: int | None = typer.Option(None, help="words per chunk for tables and lists (default: the head's own setting, else 80; 0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
@@ -90,7 +94,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                 margin=margin, batch_size=_batch(batch_size), max_words=max_words, dense_words=dense_words, entity_tagger=False if no_entity_tagger else entity_tagger, share_base=not separate_models, reserve_mb=reserve_mb,
                                 dense_entities_only=dense_entities_only, dense_margin=dense_margin,
                                 engine=engine, vllm_format=vllm_format, vllm_memory=vllm_memory,
-                                vllm_max_seqs=vllm_max_seqs,
+                                vllm_max_seqs=vllm_max_seqs, typed_relations=typed_relations,
                                 generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
                                 zeroshot_weights=zeroshot_weights, keep_unnamed=keep_unnamed)
         many = len(files) > 1
@@ -273,8 +277,7 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
              vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
              vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
-             typed_relations: bool = typer.Option(False, help="relation lines only of types whose endpoint types fit "
-                                                  "the entity lines written")) -> None:
+             typed_relations: bool = typer.Option(False, help=TYPED_HELP)) -> None:
     """The generator's results on every chunk of a chunk file."""
     from relweave.training.predict import generate as run
     gen, _ = _parts(weights, generator, None, need_head=False)

@@ -66,7 +66,12 @@ class Extractor:
     precise format that fits with room for parallel sequences (bf16 or fp8 of the merged generator, else the 4-bit
     training base with the adapter; relweave.serving), or "bf16", "fp8", "4bit"; vllm_memory: vLLM's share of the GPU;
     vllm_max_seqs: sequences generated at once (default as many as fit). On a card too small for both, vLLM
-    generates every chunk, stops, then the head scores (sequential); on a big card both stay loaded."""
+    generates every chunk, stops, then the head scores (sequential); on a big card both stay loaded.
+
+    typed_relations: after a chunk's entity lines the generator may only write relation types whose endpoint types
+    fit those entities (no relation the schema forbids is generated and then discarded). Worth it when the schema's
+    endpoint types are strict: on court opinions it removed every illegal line (35% before) and gained 0.02-0.03 F1.
+    None takes the head's saved setting, else off."""
 
     _zs = None  # the zero-shot adapter (zeroshot=True)
     carry = False  # carry-forward generation (earlier chunks' entities in the prompt)
@@ -79,7 +84,7 @@ class Extractor:
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False,
                  share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
                  engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
-                 vllm_max_seqs: int | None = None):
+                 vllm_max_seqs: int | None = None, typed_relations: bool | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         self._tagger = None
@@ -117,7 +122,7 @@ class Extractor:
                                          generator_url=generator_url, share_base=share_base,
                                          dense_entities_only=dense_entities_only, dense_margin=dense_margin,
                                          engine=engine, vllm_format=vllm_format, vllm_memory=vllm_memory,
-                                         vllm_max_seqs=vllm_max_seqs,
+                                         vllm_max_seqs=vllm_max_seqs, typed_relations=typed_relations,
                                          weights_dir=root if root is not None else weights_dir_of(weights, generator))
             self.schema = self._ce.schema
         if dense_words is None:  # the head says which chunk size it was trained to read tables and lists in

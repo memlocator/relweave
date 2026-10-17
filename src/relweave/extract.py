@@ -214,7 +214,7 @@ supplies the prompt settings and tokenizer."""
                  share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
                  engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
                  vllm_max_seqs: int | None = None, weights_dir: str | Path | None = None,
-                 typed_relations: bool = False):
+                 typed_relations: bool | None = None):
         from relweave import union as un
         if engine == "auto":  # vLLM when it is installed
             import importlib.util
@@ -222,8 +222,6 @@ supplies the prompt settings and tokenizer."""
         if engine not in ("transformers", "vllm"):
             raise ValueError(f"engine {engine!r}: transformers, vllm or auto")
         self.engine, self.vllm_format, self.vllm_memory, self.vllm_max_seqs = engine, vllm_format, vllm_memory, vllm_max_seqs
-        # relation lines may only use types whose endpoint types fit the entity lines already written (and no self-loops)
-        self.typed_relations = typed_relations
         self.weights_dir = Path(weights_dir) if weights_dir is not None else Path(generator).parent
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
@@ -245,6 +243,13 @@ supplies the prompt settings and tokenizer."""
         self.dense_entities_only = dense_entities_only if dense_entities_only is not None \
             else union_cfg.get("dense_entities_only", False)
         self.dense_margin = dense_margin if dense_margin is not None else union_cfg.get("dense_margin")
+        # relation lines may only use types whose endpoint types fit the entity lines already written (and no
+        # self-loops); the caller's choice, else the head's saved setting, else off
+        self.typed_relations = typed_relations if typed_relations is not None \
+            else union_cfg.get("typed_relations", False)
+        if typed_relations and generator_url:
+            raise ValueError("typed relation decoding runs in relweave's own generators (engine transformers or "
+                             "vllm), not on a remote generator_url")
         # the base the adapters were trained on (exported config), unless the caller names one
         self.model, self.group = model or settings.get("base_model", DEFAULT_MODEL), group
         self.generator_url = generator_url

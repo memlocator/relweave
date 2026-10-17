@@ -182,6 +182,11 @@ def test_cli_passes_schema_cut_margin_and_batch_size(tmp_path, monkeypatch):
                                    "my.py:MINE", "--cut", "-1.5", "--margin", "1", "--batch-size", "4"])
     assert res.exit_code == 0, res.output
     assert (seen["schema"], seen["cut"], seen["margin"], seen["batch_size"]) == ("my.py:MINE", -1.5, 1.0, 4)
+    assert seen["typed_relations"] is None  # the head's saved setting
+    res = CliRunner().invoke(app, ["run", str(tmp_path / "a.txt"), "--out", str(tmp_path / "a.json"),
+                                   "--typed-relations"])
+    assert res.exit_code == 0, res.output
+    assert seen["typed_relations"] is True
 
 
 def test_carry_forward_generates_in_rounds_with_each_documents_own_known_entities():

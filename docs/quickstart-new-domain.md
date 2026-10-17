@@ -119,7 +119,8 @@ ENGINE=vllm RELWEAVE_GEN=path/to/vllm-env/bin/relweave bash path/to/relweave/scr
 Settings by environment variable: `EPOCHS` (3), `LR` (1e-4), `MAX_PROBES` (200 head probes per chunk; 80 fit an 8 GB
 card), `HEAD` (1), `ENGINE`, `RELWEAVE_GEN` and `TYPED` (0; 1 generates validation and test with typed relation decoding,
 which allows only relation types whose endpoint types fit the listed entities: on court opinions it removed every
-illegal relation line and raised judged F1 by 0.02-0.03; use it when your schema's endpoint types are strict). A run that stops (out of memory, a reboot) continues where it stopped
+illegal relation line and raised judged F1 by 0.02-0.03; use it when your schema's endpoint types are strict, and then run with `relweave run --typed-relations` or
+`Extractor(typed_relations=True)` too). A run that stops (out of memory, a reboot) continues where it stopped
 when you run the same line again: a step whose output exists is skipped; delete that output to redo it.
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.

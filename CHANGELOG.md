@@ -17,7 +17,8 @@
 
 ### Added
 
-- `relweave generate --typed-relations` (both engines): after the entity lines, only relation types whose endpoint
+- Typed relation decoding, `--typed-relations` on `relweave run` and `generate`, `Extractor(typed_relations=True)`
+  (both engines; a head config may save it as `union.typed_relations`): after the entity lines, only relation types whose endpoint
   types fit the listed entities can be written. On court opinions it removed every illegal relation line (35% before)
   and raised judged F1 by 0.02-0.03. `TYPED=1` in `scripts/train_domain.sh`.
 - A remote generator (`--generator-url`, e.g. a vLLM docker server) is asked for the LoRA named `generator` when it
