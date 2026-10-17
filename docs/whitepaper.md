@@ -710,6 +710,42 @@ A whole 7,000-token document fits an 8 GB card when only the layers read are kep
 computed for the last token only and no key/value cache is built (the default forward pass keeps all of them, about
 1.4 GB for the hidden states alone).
 
+### 5.12 Serving on vLLM
+
+Generation is most of the run time: on a profile of six documents (26 chunks) on one 8 GB card it took 85% of 703 s,
+the pair head 13%, the tagger under 2%. Generation is bound by writing tokens (about 20 per second batched in 4-bit
+with transformers), and a few dense chunks dominate: the three longest wrote 46% of all tokens (median 201 tokens per
+chunk, maximum 2,500).
+
+**Method: parity before speed.** A serving engine is acceptable only if it gives the same graph as training. Three
+checks, each on held-out text: (1) the generator alone, the same chunks through transformers and through vLLM, compared
+by the entities and relations they write; (2) any part that reads hidden states (tagger, pair head) fed the states vLLM
+computes, compared with the states transformers computes (cosine of the features) and by the part's own score; (3) the
+whole pipeline on the 26 unseen documents, added to their judged pool so that only new claims go to the judges, and a
+paired document bootstrap against the transformers run.
+
+| check | result |
+|---|---|
+| generator, 26 chunks: 4-bit base + generator LoRA on vLLM vs transformers | entities 184 of 186 shared, relations 176 of 178; 97 s vs about 600 s |
+| tagger on vLLM's hidden states (merged generator, fp8) vs transformers (4-bit) | feature cosine 0.996; entity recall 0.997 / 0.989 / 0.955 vs 1.000 / 0.986 / 0.955 (written lists, lead lists, annual report) |
+| whole pipeline, 26 unseen documents, judged | F1 0.719 vs 0.702, paired +0.017 (95% 0.000 to +0.045); 8.2 vs 25 minutes |
+
+The format is chosen from the card: a weight format is used when its weights, vLLM's own overhead and a minimal cache
+for parallel sequences fit (bf16 of the merged generator, then fp8, then the 4-bit base with the adapter as a LoRA,
+which is the training format exactly); parallelism is as high as the cache allows. On the 8 GB card fp8 left about
+0.4 GB of cache (one full-length sequence) and 4-bit 8,336 tokens (about three), so 4-bit is the small-card choice.
+Speculative decoding by prompt lookup did not fit in 8 GB at any tried context. vLLM pins its own torch, so it runs in
+its own environment; the pair head and the tagger stay in transformers in the same process (on a small card vLLM stops
+after generating and the head then scores).
+
+**Moving the pair head into vLLM.** The head's packed probes see the prefix and themselves only and continue the
+prefix's positions, which is what separate requests sharing a cached prefix are; only the readout (an MLP over two
+layers' states) has no counterpart in a serving engine. A readout that is one token per relation label plus a "none"
+token, read from the model's own next-token logits on the final layer (the adapter learns to put the answer there),
+keeps the head's margin and loss and is servable as one-token requests. With gold entities it reached F1 0.823 against
+0.838 for the MLP head at the same training budget (0.747 after a quarter of it). vLLM's hidden-state extraction also
+works (the tagger result above) but writes the states to disk per request and does not support the 4-bit format.
+
 ## 6. Error analysis
 
 **Entities.** On validation the generator misses 150 of 1,981 gold entities (7.6%), which carry 143 gold relations
@@ -946,7 +982,8 @@ types and definitions; `src/relweave/schema/business.py` is its source.
    compact prompt are the defaults), then
    `relweave train-generator <training chunks> --out runs/gen --init-adapter runs/pilot/adapter --lr 1e-4 --epochs 1`.
 3. **Generator answers** on validation, test and training chunks:
-   `relweave generate <chunks.jsonl> --generator runs/gen --out gen_<set>.jsonl`.
+   `relweave generate <chunks.jsonl> --generator runs/gen --out gen_<set>.jsonl` (on vLLM when it is installed in the
+   environment; Section 5.12).
 4. **Pair head.** `relweave train-head <training chunks> --generator runs/gen --own-results gen_train.jsonl --max-probes 200 --out runs/head`
    (the published head continued from a stage-0 head: `--base-head`).
 5. **Entity tagger.** `relweave train-tagger <training chunks> --head runs/head --out runs/tagger`.
@@ -956,7 +993,9 @@ types and definitions; `src/relweave/schema/business.py` is its source.
 7. **Judged scores on whole documents.** `relweave run` on the documents, then pooled judging with `relweave judge`
    (docs/quickstart-new-domain.md, step 6; docs/evaluation-standards.md).
 
-The library entry point is `relweave.Extractor` (`relweave run` on the command line).
+The library entry point is `relweave.Extractor` (`relweave run` on the command line). For a new schema, steps 2 to 6
+are one command, `scripts/train_domain.sh`, which resumes after an interruption; `docs/quickstart-new-domain.md` walks
+through a whole domain, labelling and judging included (Section 5.13).
 
 ## Appendix D. Labelling conventions and training settings
 
@@ -1001,3 +1040,14 @@ aligned to gold. Union: cut -2 and margin +0.5, chosen on validation (grid cut -
 trained on name mentions (a mention sharing a capitalised word with the name; no pronouns or descriptions), the text
 read once; 2 epochs, AdamW lr 1e-3, weight 0.3 on the outside tag. Spans snap to whole words, end at line breaks and
 drop trailing punctuation.
+
+## Appendix E. Versions and hardware
+
+| component | version |
+|---|---|
+| base model | Qwen3-4B, 4-bit NF4 (unsloth/qwen3-4b-unsloth-bnb-4bit) |
+| torch / transformers / peft (training and the transformers engine) | 2.14 / 5.3 / 0.21 |
+| vLLM engine environment | vLLM 0.31, vllm-bnb-plugin 0.0.3, torch 2.13, transformers 5.17, peft 0.21.2, bitsandbytes 0.50.2 |
+| local GPU | NVIDIA RTX 3070 Ti, 8 GB (Ampere; no native fp8) |
+| rented GPUs | Hugging Face Jobs: L4 and A10G (24 GB) |
+| labelling and judging agents | Claude Sonnet and Opus (two judges from different models per pool) |
