@@ -79,7 +79,7 @@ relweave generate chunks.jsonl --out results.jsonl --engine vllm
 - **Weight format** (`--vllm-format auto`): the most precise that fits with room for parallel sequences: bf16 of the
   merged generator on a large card, fp8 on a mid-size one, and on a small card (8 GB) the 4-bit base the adapters were
   trained on with the generator's adapter as a LoRA. All formats give the same graph within noise (whitepaper,
-  Appendix C); `bf16`, `fp8` or `4bit` forces one.
+  Section 5.12); `bf16`, `fp8` or `4bit` forces one.
 - **Parallelism**: as many sequences at once as the cache holds (vLLM's 256 on a large card, 32 on a small one);
   `--vllm-max-seqs` and `--vllm-memory` (vLLM's share of the GPU) override.
 - **The pair head and entity tagger** stay in transformers in the same process. On a card with room for both, vLLM and
