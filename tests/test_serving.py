@@ -22,3 +22,9 @@ def test_the_head_stays_resident_only_on_a_big_card():
     assert resident_share(7.3, 8.0) is None
     share = resident_share(23.0, 24.0)
     assert share is not None and share * 24.0 <= 23.0 - HEAD_GB
+
+
+def test_a_served_lora_generator_is_asked_by_name():
+    from relweave.remote import pick_model
+    assert pick_model(["unsloth/qwen3-4b-unsloth-bnb-4bit", "generator"]) == "generator"
+    assert pick_model(["chrullis/relweave-4b-base"]) == "chrullis/relweave-4b-base"

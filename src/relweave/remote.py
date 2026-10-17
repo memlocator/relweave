@@ -24,10 +24,19 @@ def _post(url: str, body: dict, timeout: float) -> dict:
         return json.loads(r.read())
 
 
+GENERATOR_LORA = "generator"  # the name to serve the generator's adapter under: --lora-modules generator=<dir>
+
+
+def pick_model(ids: list[str]) -> str:
+    """The model to ask: the generator's LoRA when the server has it (a 4-bit base with the adapter attached lists the
+    base first), else the first model (a merged generator)."""
+    return GENERATOR_LORA if GENERATOR_LORA in ids else ids[0]
+
+
 def served_model(base_url: str, timeout: float = 30) -> str:
-    """The id of the first model the server lists (a vLLM server serves one)."""
+    """The model id to send requests to on this server (pick_model of what it lists)."""
     with urllib.request.urlopen(base_url.rstrip("/") + "/v1/models", timeout=timeout) as r:  # noqa: S310
-        return json.loads(r.read())["data"][0]["id"]
+        return pick_model([m["id"] for m in json.loads(r.read())["data"]])
 
 
 class RemoteExtractor:

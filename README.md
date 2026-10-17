@@ -48,7 +48,7 @@ relweave run a.txt b.txt c.txt --out graphs/ --graphml
 ```
 
 Useful options (`relweave run --help`): `--weights` (a Hub repository or a local directory with `generator/` and
-`head/`; `chrullis/relweave-1.7b-base` for the smaller model), `--generator-url` (see below), `--schema`, `--cut` and `--margin` (the union rule), `--batch-size` (default `auto`), `--max-words` (chunk
+`head/`; `chrullis/relweave-1.7b-base` for the smaller model), `--engine vllm` (faster, see below), `--generator-url`, `--schema`, `--cut` and `--margin` (the union rule), `--batch-size` (default `auto`), `--max-words` (chunk
 size). If a model cannot be loaded (for example not enough GPU memory) the command fails with an error and a non-zero
 exit code; a single chunk that fails becomes a warning in the graph and the document continues.
 
@@ -66,42 +66,66 @@ Each model repository holds the generator twice: as a LoRA adapter in `generator
 transformers backend on the 4-bit base) and, at the root, merged into the dequantized 4-bit base as one plain bf16
 model for vLLM. The pair head (`head/`, its own LoRA plus a classifier) is never merged and always runs in relweave.
 
-## Serving the generator with vLLM
+## Faster: the generator on vLLM
 
-Generation is most of the run time. Each model repository holds, at its root, the generator as an ordinary bf16
-model (the 4-bit base the adapter was trained on, dequantized, with the adapter merged in), so a standard vLLM
-server or container serves it directly:
+Generation is most of the run time (about 85% on our profile). relweave can run the generator on
+[vLLM](https://github.com/vllm-project/vllm) in the same process and choose everything from the GPU it finds:
 
 ```
-vllm serve chrullis/relweave-4b-base --quantization fp8 --max-model-len 4096     # 4B: fp8 weights, ~4.5 GB
-vllm serve chrullis/relweave-1.7b-base --max-model-len 4096                      # 1.7B: bf16, ~3.5 GB
+relweave run report.txt --out graph.json --engine vllm      # or Extractor(engine="vllm"); "auto": vLLM if installed
+relweave generate chunks.jsonl --out results.jsonl --engine vllm
+```
+
+- **Weight format** (`--vllm-format auto`): the most precise that fits with room for parallel sequences: bf16 of the
+  merged generator on a large card, fp8 on a mid-size one, and on a small card (8 GB) the 4-bit base the adapters were
+  trained on with the generator's adapter as a LoRA. All formats give the same graph within noise (whitepaper,
+  Appendix C); `bf16`, `fp8` or `4bit` forces one.
+- **Parallelism**: as many sequences at once as the cache holds (vLLM's 256 on a large card, 32 on a small one);
+  `--vllm-max-seqs` and `--vllm-memory` (vLLM's share of the GPU) override.
+- **The pair head and entity tagger** stay in transformers in the same process. On a card with room for both, vLLM and
+  the head stay loaded together; on a small card vLLM generates every chunk, stops, and the head then scores.
+
+vLLM pins its own torch, so install it in its own environment with relweave next to it:
+
+```
+python -m venv vllm-env && . vllm-env/bin/activate
+pip install vllm vllm-bnb-plugin "relweave @ git+https://github.com/memlocator/relweave"
+```
+
+(tested with vLLM 0.31 and vllm-bnb-plugin 0.0.3; without a CUDA toolkit installed set `VLLM_USE_FLASHINFER_SAMPLER=0`.)
+Training (`relweave[train]`) stays in the other environment; `scripts/train_domain.sh` takes `ENGINE=vllm` and
+`RELWEAVE_GEN=path/to/vllm-env/bin/relweave` to generate on vLLM while it trains in the train environment.
+
+**As a server.** Each model repository also holds, at its root, the generator merged into the dequantized 4-bit base
+as one plain bf16 model, so a standard vLLM server serves it, and relweave sends each chunk with its decoding grammar
+and runs the head locally:
+
+```
+vllm serve chrullis/relweave-4b-base --quantization fp8 --max-model-len 4096
 docker run --gpus all -p 8000:8000 --ipc=host vllm/vllm-openai --model chrullis/relweave-4b-base --quantization fp8
-```
-
-The LoRA is already merged into that model, so vLLM needs no `--enable-lora` (tested with vLLM 0.31). The endpoint is
-a component, not a chat model: it writes relweave's line format only under the prompt and per-chunk grammar relweave
-sends, so call it through relweave.
-
-relweave then sends each chunk to the server with its decoding grammar and runs the pair head locally:
-
-```python
-ex = Extractor(weights="chrullis/relweave-4b-base", generator_url="http://localhost:8000")
-```
-
-```
 relweave run report.txt --out graph.json --generator-url http://localhost:8000
 ```
 
-On one 8 GB GPU (test set of 64 chunks), the generator ran at about 42 chunks per minute for the 4B (fp8) and 96 for
-the 1.7B against 4.5 and 6 with the default transformers backend, at the same F1 (4B system 0.771 vs 0.770, 1.7B 0.749
-vs 0.736). On an 8 GB card the 4B needs `--max-model-len 3072 --max-num-batched-tokens 2048 --gpu-memory-utilization 0.84`
-(and then leaves no room for the pair head: run the head afterwards or on another GPU). Without a CUDA toolkit
-installed, start vLLM with `VLLM_USE_FLASHINFER_SAMPLER=0`. Serving the adapter
-on the original full-precision Qwen3 instead of the merged model loses about 0.03 F1 (the adapter learned against the
-4-bit weights); `scripts/merge_for_vllm.py` builds the merged model from your own trained weights.
+Your own trained generator, served exactly as it was trained (the 4-bit base with the adapter as a LoRA named
+`generator`, which relweave asks for when the server lists it). The 4-bit format needs vllm-bnb-plugin, which the
+official image does not contain (this image is not yet tested here):
 
-The pair head needs the model's hidden states, which vLLM does not return, so it runs locally in transformers. On a
-GPU shared with the server, leave it about 3 GB (for example `--gpu-memory-utilization 0.5`).
+```
+# Dockerfile
+FROM vllm/vllm-openai
+RUN pip install vllm-bnb-plugin
+```
+
+```
+docker run --gpus all -p 8000:8000 --ipc=host -v $PWD/runs/gen:/gen my-vllm \
+  --model unsloth/qwen3-4b-unsloth-bnb-4bit --quantization bitsandbytes \
+  --enable-lora --max-lora-rank 32 --lora-modules generator=/gen/adapter
+```
+
+The endpoint is a component, not a chat model: it writes relweave's line format only under the prompt and per-chunk
+grammar relweave sends. Serving the adapter on the original full-precision Qwen3 instead of the merged model loses
+about 0.03 F1 (the adapter learned against the 4-bit weights); `scripts/merge_for_vllm.py` builds the merged model from
+your own trained weights.
 
 ## Output
 
