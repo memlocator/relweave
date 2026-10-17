@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2
+
+### Fixed
+
+- **Typed relation decoding on vLLM looped on entity lines.** Its first request ran under an entities-only grammar,
+  which forbids the sentence block the model wants to write next; a trained generator rarely ends its turn there, so
+  it wrote entity lines until it ran out of tokens (court validation: 75 entity lines per chunk against 13 untyped,
+  and pair scoring, which grows with the square of the entity count, slowed about 20-fold). The first request now runs
+  under the full grammar and stops where the first block starts, as the transformers backend switches grammars there.
+  Checked on a 24 GB card with a trained court generator, 10 chunks: 72 entity lines typed and untyped. The 0.4.1
+  check counted relation lines only and passed on the looping output.
+
 ## 0.4.1
 
 ### Fixed
