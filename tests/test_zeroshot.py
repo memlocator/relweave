@@ -86,7 +86,7 @@ def test_zeroshot_refuses_entity_types_the_generator_cannot_find(monkeypatch):
             self.schema, self.model, self.cut, self.margin = BUSINESS, "m", None, None
 
     monkeypatch.setattr(ex, "ChunkExtractor", CE)
-    monkeypatch.setattr(ex, "resolve_weights", lambda spec: __import__("pathlib").Path("/w"))
+    monkeypatch.setattr(ex, "resolve_weights", lambda spec, merged=False: __import__("pathlib").Path("/w"))
     with pytest.raises(ValueError, match="Grant"):
         Extractor(schema=Schema(name="grants_test", entities=[Org, Grant], relations=[Awarded]), zeroshot=True,
                   sequential=True)

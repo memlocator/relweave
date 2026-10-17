@@ -60,6 +60,13 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                                              "(default: the head's saved setting, else off)"),
         dense_margin: float | None = typer.Option(None, help="head margin on those chunks (default: the head's saved "
                                                              "setting, else --margin)"),
+        engine: str = typer.Option("transformers", help="transformers, vllm (the generator on vLLM in this process: "
+                                   "vLLM and vllm-bnb-plugin installed next to relweave) or auto (vLLM when installed)"),
+        vllm_format: str = typer.Option("auto", help="vLLM weight format: auto (the most precise that fits), bf16, "
+                                        "fp8 or 4bit"),
+        vllm_memory: float | None = typer.Option(None, help="vLLM's share of the GPU (default: what the card allows)"),
+        vllm_max_seqs: int | None = typer.Option(None, help="sequences vLLM generates at once (default: as many "
+                                                 "as fit)"),
         no_entity_tagger: bool = typer.Option(False, help="run without the entity tagger (faster; long lists and tables lose names)"),
         dense_words: int | None = typer.Option(None, help="words per chunk for tables and lists (default: the head's own setting, else 80; 0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
@@ -78,6 +85,8 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
         ex = relweave.Extractor(weights=weights, schema=schema, model=model, generator=generator, head=head, cut=cut,
                                 margin=margin, batch_size=_batch(batch_size), max_words=max_words, dense_words=dense_words, entity_tagger=False if no_entity_tagger else entity_tagger, share_base=not separate_models, reserve_mb=reserve_mb,
                                 dense_entities_only=dense_entities_only, dense_margin=dense_margin,
+                                engine=engine, vllm_format=vllm_format, vllm_memory=vllm_memory,
+                                vllm_max_seqs=vllm_max_seqs,
                                 generator_url=generator_url, zeroshot=zeroshot, threshold=threshold,
                                 zeroshot_weights=zeroshot_weights, keep_unnamed=keep_unnamed)
         many = len(files) > 1

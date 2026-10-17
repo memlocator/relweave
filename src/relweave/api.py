@@ -16,6 +16,15 @@ from relweave.records import ChunkGraph
 RESIDENT_MB = 9000  # free GPU memory needed to keep the generator and the head (or zero-shot adapter) loaded together
 
 
+def weights_dir_of(weights, generator):
+    """The weights directory (the merged generator at its root, as published) when the weights were given; else the
+    generator directory's parent."""
+    from pathlib import Path
+    if weights is not None and Path(str(weights)).is_dir():
+        return Path(str(weights))
+    return Path(generator).parent if generator is not None else None
+
+
 class Extractor:
     """Wraps the model.
 
@@ -49,7 +58,14 @@ class Extractor:
 
     dense_entities_only: on dense chunks (lists, tables, key-value blocks) the generator writes entity lines only and
     the pair head supplies every relation, at dense_margin; much faster on lists and tables, where most generated
-    tokens are relation lines. None takes the head's saved setting (chosen on validation), default off."""
+    tokens are relation lines. None takes the head's saved setting (chosen on validation), default off.
+
+    engine: "transformers" (default), "vllm" (the generator on vLLM in this process; vllm and vllm-bnb-plugin installed) or
+    "auto" (vLLM when installed). The pair head and tagger stay in transformers. vllm_format: "auto" picks the most
+    precise format that fits with room for parallel sequences (bf16 or fp8 of the merged generator, else the 4-bit
+    training base with the adapter; relweave.serving), or "bf16", "fp8", "4bit"; vllm_memory: vLLM's share of the GPU;
+    vllm_max_seqs: sequences generated at once (default as many as fit). On a card too small for both, vLLM
+    generates every chunk, stops, then the head scores (sequential); on a big card both stay loaded."""
 
     _zs = None  # the zero-shot adapter (zeroshot=True)
     carry = False  # carry-forward generation (earlier chunks' entities in the prompt)
@@ -60,7 +76,9 @@ class Extractor:
                  cut: float | None = None, margin: float | None = None, batch_size: int | str = "auto",
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False,
-                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None):
+                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
+                 engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+                 vllm_max_seqs: int | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size
         self._tagger = None
@@ -69,7 +87,7 @@ class Extractor:
             head = ex.resolve_head(head)  # a local directory or a Hub repository id
         root = None
         if generator is None or head is None:
-            root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS)
+            root = ex.resolve_weights(weights or ex.DEFAULT_WEIGHTS, merged=engine != "transformers" and vllm_format != "4bit")
             generator, head = generator or root / "generator", head or root / "head"
         # entity tagger (relweave.tagger): a directory, False for none, or None for the weights' own tagger/ when present
         if entity_tagger is None and root is not None and (root / "tagger" / "tagger.pt").exists() and not zeroshot:
@@ -96,12 +114,21 @@ class Extractor:
         else:
             self._ce = ex.ChunkExtractor(generator, head, model, schema, device, reserve_mb, group, cut, margin,
                                          generator_url=generator_url, share_base=share_base,
-                                         dense_entities_only=dense_entities_only, dense_margin=dense_margin)
+                                         dense_entities_only=dense_entities_only, dense_margin=dense_margin,
+                                         engine=engine, vllm_format=vllm_format, vllm_memory=vllm_memory,
+                                         vllm_max_seqs=vllm_max_seqs,
+                                         weights_dir=root if root is not None else weights_dir_of(weights, generator))
             self.schema = self._ce.schema
         if dense_words is None:  # the head says which chunk size it was trained to read tables and lists in
             cfg = getattr(self._ce, "head_config", None) or {}
             dense_words = cfg.get("chunking", {}).get("dense_words", DENSE_WORDS)
         self.dense_words = dense_words or None  # 0: tables and lists chunked as prose
+        if sequential is None and getattr(self._ce, "engine", "transformers") == "vllm":
+            from relweave.serving import gpu_memory_gb, resident_share
+            share = resident_share(*gpu_memory_gb())
+            sequential = share is None
+            if share is not None and self._ce.vllm_memory is None:
+                self._ce.vllm_memory = share  # leave the head its room
         if sequential is None:
             import torch
             # with a shared base both parts are one model (about 3.6 GB plus two small adapters): keep them resident;

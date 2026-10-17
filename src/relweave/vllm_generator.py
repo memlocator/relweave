@@ -1,5 +1,5 @@
 """The generator on vLLM: the same prompt, grammar and output as relweave.generator.QwenExtractor, with vLLM's
-continuous batching and paged attention in place of transformers' generate (optional: pip install relweave[vllm]).
+continuous batching and paged attention in place of transformers' generate (optional: install vllm and vllm-bnb-plugin in the same environment; vLLM pins its own torch).
 
 Differences from the transformers backend:
 - stop on repeat is applied after decoding: once a relation line repeats one already written in the chunk, the rest
@@ -69,21 +69,38 @@ class VllmExtractor:
                        **({"max_num_batched_tokens": max_num_batched_tokens} if max_num_batched_tokens else {}))
         self.lora = LoRARequest("generator", 1, str(adapter)) if adapter is not None else None
 
-    def _params(self, text: str):
+    def shutdown(self) -> None:
+        """Stop the engine and give its GPU memory back (the pair head and tagger load next on a small card)."""
+        import gc
+        try:
+            self.llm.llm_engine.engine_core.shutdown()
+        except Exception:  # noqa: BLE001  older or newer vLLM: fall back to dropping the object
+            pass
+        self.llm = None
+        gc.collect()
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _params(self, text: str, entities_only: bool = False):
         from vllm import SamplingParams
         from vllm.sampling_params import StructuredOutputsParams
-        grammar = self.format.ebnf_for(self.format.grammar_key(text))
+        grammar = self.format.ebnf_for(0 if entities_only else self.format.grammar_key(text))
         return SamplingParams(temperature=0.0, max_tokens=self.max_new_tokens,
                               structured_outputs=StructuredOutputsParams(grammar=grammar))
 
-    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0) -> list[ExtractionResult]:
+    def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0,
+                      entities_only: frozenset = frozenset()) -> list[ExtractionResult]:
         items = [(*it, None)[:3] for it in items]  # (key, text) or (key, text, known entity lines)
         prompts = [generation_prompt(self.tokenizer, chat_messages(text, self.fmt, compact=self.compact,
                                                                    schema=self.schema, conditioned=self.conditioned,
                                                                    known=known))
                    for _, text, known in items]
         t0 = time.perf_counter()
-        outs = self.llm.generate(prompts, [self._params(text) for _, text, _ in items], lora_request=self.lora,
+        outs = self.llm.generate(prompts, [self._params(text, cid in entities_only) for cid, text, _ in items],
+                                 lora_request=self.lora,
                                  use_tqdm=False)
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []

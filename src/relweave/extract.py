@@ -25,14 +25,17 @@ DEFAULT_MODEL = "unsloth/qwen3-4b-unsloth-bnb-4bit"
 BATCH_CHOICES = (8, 4, 2, 1)
 
 
-def resolve_weights(spec: str | Path) -> Path:
+def resolve_weights(spec: str | Path, merged: bool = False) -> Path:
     """A local directory as it is; anything else is a Hub repository id, downloaded (cached) with
-    huggingface_hub.snapshot_download (only the parts relweave reads: generator/, head/, tagger/, schema.json; the merged
-    model at a repository's root is for HTTP servers such as vLLM)."""
+    huggingface_hub.snapshot_download: the parts relweave reads (generator/, head/, tagger/, schema.json), and with
+    merged=True also the merged generator at the repository's root (about 8 GB; vLLM serves it in bf16 or fp8)."""
     if Path(spec).is_dir():
         return Path(spec)
     from huggingface_hub import snapshot_download
-    return Path(snapshot_download(str(spec), allow_patterns=["generator/*", "head/*", "tagger/*", "schema.json", "README.md"]))
+    parts = ["generator/*", "head/*", "tagger/*", "schema.json", "README.md"]
+    if merged:
+        parts += ["*.safetensors", "*.json", "*.jinja"]
+    return Path(snapshot_download(str(spec), allow_patterns=parts))
 
 
 def resolve_head(spec: str | Path) -> Path:
@@ -206,8 +209,17 @@ supplies the prompt settings and tokenizer."""
     def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
                  margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None,
-                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None):
+                 share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
+                 engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+                 vllm_max_seqs: int | None = None, weights_dir: str | Path | None = None):
         from relweave import union as un
+        if engine == "auto":  # vLLM when it is installed
+            import importlib.util
+            engine = "vllm" if importlib.util.find_spec("vllm") is not None else "transformers"
+        if engine not in ("transformers", "vllm"):
+            raise ValueError(f"engine {engine!r}: transformers, vllm or auto")
+        self.engine, self.vllm_format, self.vllm_memory, self.vllm_max_seqs = engine, vllm_format, vllm_memory, vllm_max_seqs
+        self.weights_dir = Path(weights_dir) if weights_dir is not None else Path(generator).parent
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
         self.generator_dir, self.head_dir = Path(generator), Path(head) if head is not None else None
@@ -238,7 +250,7 @@ supplies the prompt settings and tokenizer."""
         self._gen = self._head = None
         # one base model with the generator's and the head's adapters attached by name, switched per phase (instead of
         # a second 3.6 GB copy of the base); off when the generator is served (it then lives in the server)
-        self.share_base = share_base and not generator_url
+        self.share_base = share_base and not generator_url and engine == "transformers"
         self._base = None
 
     def _read_head_config(self) -> dict:
@@ -258,6 +270,8 @@ supplies the prompt settings and tokenizer."""
             self._gen = RemoteExtractor(self.generator_url, self._tokenizer_dir(), fmt="sentences", compact=self.compact,
                                         schema=self.schema, conditioned=self.conditioned,
                                         max_new_tokens=self.max_new_tokens)
+        if self._gen is None and self.engine == "vllm":
+            self._gen = self._vllm_generator()
         if self._gen is None:
             from relweave.generator import QwenExtractor
             from relweave.head import adapter_dir
@@ -265,6 +279,31 @@ supplies the prompt settings and tokenizer."""
             self._gen = QwenExtractor(model_id=self.model, adapter=adapter_dir(self.generator_dir), constrained=True,
                                       fmt="sentences", compact=self.compact, stop_on_repeat=True, schema=self.schema,
                                       conditioned=self.conditioned, max_new_tokens=self.max_new_tokens, **shared)
+
+    def _vllm_generator(self):
+        """The generator on vLLM in this process, in the format and parallelism the card allows
+        (relweave.serving.plan): the merged model (bf16 or fp8) when the weights have one, else the 4-bit base with
+        the generator's adapter."""
+        from relweave.head import adapter_dir
+        from relweave.serving import gpu_memory_gb, merged_model_dir, plan
+        from relweave.vllm_generator import VllmExtractor
+        free, total = gpu_memory_gb()
+        merged = merged_model_dir(self.weights_dir)
+        fmt = self.vllm_format
+        if fmt == "auto" and merged is None:
+            fmt = "4bit"  # no merged model to serve: the training format
+        p = plan(free, total, fmt, self.vllm_memory, self.vllm_max_seqs)
+        if p.format in ("bf16", "fp8") and merged is None:
+            raise ValueError(f"vLLM format {p.format} needs the merged generator at the weights' root "
+                             f"({self.weights_dir}); use vllm_format='4bit'")
+        print(f"vLLM generator: {p.reason}; memory share {p.gpu_memory_utilization}, up to {p.max_num_seqs} "
+              "sequences at once", flush=True)
+        common = dict(max_new_tokens=self.max_new_tokens, fmt="sentences", compact=self.compact, schema=self.schema,
+                      conditioned=self.conditioned, gpu_memory_utilization=p.gpu_memory_utilization,
+                      max_model_len=p.max_model_len, max_num_seqs=p.max_num_seqs)
+        if p.format == "4bit":
+            return VllmExtractor(self.model, adapter_dir(self.generator_dir), quantization="bitsandbytes", **common)
+        return VllmExtractor(str(merged), None, quantization="fp8" if p.format == "fp8" else None, **common)
 
     def _shared_base(self):
         """The base model with the generator's adapter (named "generator"), loaded once; the head's adapter is added
@@ -290,6 +329,8 @@ supplies the prompt settings and tokenizer."""
         return d if (d / "tokenizer_config.json").exists() else Path(self.model)
 
     def unload_generator(self) -> None:
+        if hasattr(self._gen, "shutdown"):  # vLLM: stop the engine so its memory is free for the head
+            self._gen.shutdown()
         self._gen = None
         self._drop_base_if_unused()
         _free_gpu()
