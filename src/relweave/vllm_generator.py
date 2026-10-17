@@ -45,7 +45,7 @@ class VllmExtractor:
                  compact: bool = False, schema: Schema | None = None, conditioned: bool = False,
                  stop_on_repeat: bool = True, gpu_memory_utilization: float = 0.8, max_model_len: int = 8192,
                  lora_rank: int = 32, quantization: str | None = None, max_num_batched_tokens: int | None = None,
-                 ngram: int = 0):
+                 ngram: int = 0, max_num_seqs: int | None = None):
         from transformers import AutoTokenizer
         from vllm import LLM
         from vllm.lora.request import LoRARequest
@@ -59,6 +59,8 @@ class VllmExtractor:
         self.llm = LLM(model=model_id, quantization=quantization, enable_lora=adapter is not None, max_lora_rank=lora_rank,
                        gpu_memory_utilization=gpu_memory_utilization, max_model_len=max_model_len,
                        enable_prefix_caching=True,
+                       # fewer parallel sequences: smaller CUDA graphs and sampler buffers (an 8 GB card)
+                       **({"max_num_seqs": max_num_seqs} if max_num_seqs else {}),
                        # prompt-lookup speculative decoding: entity lines copy names from the text, so drafts taken
                        # from the prompt are often right; greedy output is unchanged (vLLM checks drafts against the
                        # grammar); not with a LoRA served at run time

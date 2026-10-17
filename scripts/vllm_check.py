@@ -27,6 +27,7 @@ def main() -> None:
     ap.add_argument("--max-batched-tokens", type=int, default=None, help="prefill step size (less activation memory)")
     ap.add_argument("--merged", action="store_true", help="--model is a merged model (merge_for_vllm.py)")
     ap.add_argument("--ngram", type=int, default=0, help="prompt-lookup speculative decoding: tokens drafted per step")
+    ap.add_argument("--max-num-seqs", type=int, default=None, help="parallel sequences (less memory on small cards)")
     a = ap.parse_args()
     s = generator_settings(a.weights / "generator")
     items = [(r["chunk_id"], r["text"]) for r in map(json.loads, a.chunks.read_text().splitlines()) if r]
@@ -34,7 +35,8 @@ def main() -> None:
     ex = VllmExtractor(a.model, None if a.merged else a.weights / "generator", s.get("max_new_tokens", 2500), s["format"],
                        s["compact_prompt"], registered_schema(s["schema"]), s["conditioned"],
                        gpu_memory_utilization=a.gpu_mem, quantization=a.quantization,
-                       max_model_len=a.max_model_len, max_num_batched_tokens=a.max_batched_tokens, ngram=a.ngram)
+                       max_model_len=a.max_model_len, max_num_batched_tokens=a.max_batched_tokens, ngram=a.ngram,
+                       max_num_seqs=a.max_num_seqs)
     t1 = time.perf_counter()
     res = ex.extract_batch(items)
     t2 = time.perf_counter()
