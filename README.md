@@ -72,9 +72,12 @@ Generation is most of the run time (about 85% on our profile). relweave can run 
 [vLLM](https://github.com/vllm-project/vllm) in the same process and choose everything from the GPU it finds:
 
 ```
-relweave run report.txt --out graph.json --engine vllm      # or Extractor(engine="vllm"); "auto": vLLM if installed
-relweave generate chunks.jsonl --out results.jsonl --engine vllm
+relweave run report.txt --out graph.json                    # engine "auto" (default): vLLM when it is installed
+relweave run report.txt --out graph.json --engine vllm      # or insist on it; --engine transformers to avoid it
 ```
+
+On the 26 unseen news, press-release and court documents the vLLM engine scored judged F1 0.719 against 0.702 on
+transformers (paired +0.017, 95% interval 0.000 to +0.045) in 8.2 minutes against 25 on one 8 GB GPU.
 
 - **Weight format** (`--vllm-format auto`): the most precise that fits with room for parallel sequences: bf16 of the
   merged generator on a large card, fp8 on a mid-size one, and on a small card (8 GB) the 4-bit base the adapters were

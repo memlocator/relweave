@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from relweave.serving import DEFAULT_ENGINE
 from relweave.chunk import Chunk
 from relweave.extract import ChunkExtractor
 from relweave.formats import load_results, save_results
@@ -14,7 +15,7 @@ from relweave.training.data import load_chunks
 
 def generate(chunks_path: Path, out: Path, generator: Path, model: str | None = None, schema=None,
              batch_size: int | str = "auto", reserve_mb: int = 500, limit: int | None = None,
-             engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+             engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
              vllm_max_seqs: int | None = None) -> int:
     """The generator's results on every chunk -> out (JSONL). Returns the number of chunks written; a chunk whose
     generation raised is saved as an error result. engine "vllm": the generator on vLLM in this process (several

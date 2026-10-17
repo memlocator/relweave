@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
 
+from relweave.serving import DEFAULT_ENGINE
 from relweave.chunk import DENSE_WORDS, MAX_WORDS, chunk
 from relweave.graph import Graph
 from relweave.merge import merge
@@ -60,8 +61,8 @@ class Extractor:
     the pair head supplies every relation, at dense_margin; much faster on lists and tables, where most generated
     tokens are relation lines. None takes the head's saved setting (chosen on validation), default off.
 
-    engine: "transformers" (default), "vllm" (the generator on vLLM in this process; vllm and vllm-bnb-plugin installed) or
-    "auto" (vLLM when installed). The pair head and tagger stay in transformers. vllm_format: "auto" picks the most
+    engine: "auto" (default: vLLM when it is installed, else transformers), "vllm" (the generator on vLLM in this
+    process; vllm and vllm-bnb-plugin installed) or "transformers". The pair head and tagger stay in transformers. vllm_format: "auto" picks the most
     precise format that fits with room for parallel sequences (bf16 or fp8 of the merged generator, else the 4-bit
     training base with the adapter; relweave.serving), or "bf16", "fp8", "4bit"; vllm_memory: vLLM's share of the GPU;
     vllm_max_seqs: sequences generated at once (default as many as fit). On a card too small for both, vLLM
@@ -77,7 +78,7 @@ class Extractor:
                  generator_url: str | None = None, zeroshot: bool = False, zeroshot_weights: str | Path | None = None,
                  threshold: float | dict | None = None, carry: bool | None = None, keep_unnamed: bool = False,
                  share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
-                 engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+                 engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
                  vllm_max_seqs: int | None = None):
         from relweave import extract as ex
         self.max_words, self.batch_size = max_words, batch_size

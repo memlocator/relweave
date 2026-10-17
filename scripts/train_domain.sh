@@ -7,7 +7,7 @@
 #
 # Settings (environment): EPOCHS=3, LR=1e-4, MAX_PROBES=200 (head probes per chunk; about 80 fit an 8 GB card),
 # HEAD=1 (0 skips the head: the generator alone, about half the run time), BASE=chrullis/relweave-4b-base,
-# ENGINE=transformers (vllm: generation on vLLM, several times faster), RELWEAVE_GEN=relweave (the relweave command
+# ENGINE=auto (vLLM when RELWEAVE_GEN has it, else transformers; vllm forces it), RELWEAVE_GEN=relweave (the relweave command
 # that generates: with ENGINE=vllm, the one in an environment with vllm and vllm-bnb-plugin, which pin their own torch;
 # training stays in the environment with relweave[train]).
 # Rerunning continues where a run stopped: a step whose output exists is skipped (delete it to redo the step).
@@ -16,7 +16,7 @@
 set -uo pipefail
 SCHEMA=${1:?usage: train_domain.sh module.py:NAME}
 EPOCHS=${EPOCHS:-3} LR=${LR:-1e-4} MAX_PROBES=${MAX_PROBES:-200} HEAD=${HEAD:-1} BASE=${BASE:-chrullis/relweave-4b-base}
-ENGINE=${ENGINE:-transformers} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave}
+ENGINE=${ENGINE:-auto} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave}
 S="--schema $SCHEMA"
 for f in gold_train/train.jsonl gold_val/test.jsonl gold_test/test.jsonl; do
   [ -s "$f" ] || { echo "missing $f (recipe-own-schema, steps 3-4)"; exit 1; }
@@ -40,7 +40,7 @@ relweave eval gold_val/test.jsonl runs/val.jsonl $S --by-type 2>/dev/null | tee 
 
 if [ "$HEAD" = 1 ]; then
   n=$(grep -c . gold_train/train.jsonl)
-  if [ ! -s runs/own.jsonl ] && [ "$ENGINE" = transformers ]; then  # vLLM: a 5-record timing is mostly its start-up
+  if [ ! -s runs/own.jsonl ] && [ "$ENGINE" = transformers ]; then  # with vLLM a 5-record timing is mostly start-up
     t0=$(date +%s); head -5 gold_train/train.jsonl > runs/time5.jsonl
     "$RELWEAVE_GEN" generate runs/time5.jsonl $S --generator runs/gen --out runs/time5_out.jsonl --engine "$ENGINE" > /dev/null 2>&1
     per=$(( ($(date +%s) - t0) / 5 ))

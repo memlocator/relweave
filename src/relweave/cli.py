@@ -18,7 +18,9 @@ import typer
 from relweave.chunk import DENSE_WORDS, MAX_WORDS
 from relweave.zeroshot import DEFAULT_THRESHOLD
 
-ENGINE_HELP = "transformers, vllm (the generator on vLLM in this process; vllm and vllm-bnb-plugin installed next to relweave) or auto (vLLM when installed)"
+from relweave.serving import DEFAULT_ENGINE  # noqa: E402  (light: no torch at import)
+
+ENGINE_HELP = "auto (vLLM when installed, else transformers), vllm (the generator on vLLM in this process; vllm and vllm-bnb-plugin installed next to relweave) or transformers"
 VLLM_FORMAT_HELP = "vLLM weight format: auto (the most precise that fits), bf16, fp8 or 4bit"
 VLLM_MEMORY_HELP = "vLLM's share of the GPU (default: what the card allows)"
 VLLM_SEQS_HELP = "sequences vLLM generates at once (default: as many as fit)"
@@ -65,7 +67,7 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                                              "(default: the head's saved setting, else off)"),
         dense_margin: float | None = typer.Option(None, help="head margin on those chunks (default: the head's saved "
                                                              "setting, else --margin)"),
-        engine: str = typer.Option("transformers", help=ENGINE_HELP),
+        engine: str = typer.Option(DEFAULT_ENGINE, help=ENGINE_HELP),
         vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
         vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
         vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
@@ -267,7 +269,7 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              schema: str | None = typer.Option(None, help=SCHEMA_HELP),
              batch_size: str = typer.Option("auto", help="1, 2, 4, 8 ... or auto"),
              limit: int | None = None, reserve_mb: int = 500,
-             engine: str = typer.Option("transformers", help=ENGINE_HELP),
+             engine: str = typer.Option(DEFAULT_ENGINE, help=ENGINE_HELP),
              vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
              vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
              vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP)) -> None:

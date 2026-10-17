@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+DEFAULT_ENGINE = "auto"  # vLLM when it is installed (same results, about 3x faster end to end), else transformers
+
 # GiB of GPU memory per format for the 4B generator: weights, then vLLM's own overhead (CUDA graphs, activations,
 # sampler) at full parallelism, then the least key/value cache worth running with (about 10 full-length sequences)
 WEIGHTS_GB = {"bf16": 8.1, "fp8": 4.4, "4bit": 2.7}

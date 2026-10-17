@@ -16,6 +16,7 @@ import re
 from itertools import combinations
 from pathlib import Path
 
+from relweave.serving import DEFAULT_ENGINE
 from relweave.chunk import Chunk
 from relweave.records import ChunkEntity, ChunkGraph, ChunkRelation, Mention
 from relweave.schema import BUSINESS, MAX_ENTITIES_PER_CHUNK, MAX_RELATIONS_PER_CHUNK, Schema, load_schema, registered_schema
@@ -211,7 +212,7 @@ supplies the prompt settings and tokenizer."""
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
                  margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None,
                  share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
-                 engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+                 engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
                  vllm_max_seqs: int | None = None, weights_dir: str | Path | None = None):
         from relweave import union as un
         if engine == "auto":  # vLLM when it is installed
