@@ -2,7 +2,7 @@
 the wall time (runs in an environment with vLLM installed; not a test).
 
 Usage: python scripts/vllm_check.py WEIGHTS_DIR chunks.jsonl out/results.jsonl --model Qwen/Qwen3-1.7B
-       [--quantization fp8] [--gpu-mem 0.8]
+       [--quantization fp8] [--gpu-mem 0.8] [--merged] [--ngram 6]
 """
 import argparse
 import json
@@ -26,6 +26,7 @@ def main() -> None:
     ap.add_argument("--max-model-len", type=int, default=8192)
     ap.add_argument("--max-batched-tokens", type=int, default=None, help="prefill step size (less activation memory)")
     ap.add_argument("--merged", action="store_true", help="--model is a merged model (merge_for_vllm.py)")
+    ap.add_argument("--ngram", type=int, default=0, help="prompt-lookup speculative decoding: tokens drafted per step")
     a = ap.parse_args()
     s = generator_settings(a.weights / "generator")
     items = [(r["chunk_id"], r["text"]) for r in map(json.loads, a.chunks.read_text().splitlines()) if r]
@@ -33,7 +34,7 @@ def main() -> None:
     ex = VllmExtractor(a.model, None if a.merged else a.weights / "generator", s.get("max_new_tokens", 2500), s["format"],
                        s["compact_prompt"], registered_schema(s["schema"]), s["conditioned"],
                        gpu_memory_utilization=a.gpu_mem, quantization=a.quantization,
-                       max_model_len=a.max_model_len, max_num_batched_tokens=a.max_batched_tokens)
+                       max_model_len=a.max_model_len, max_num_batched_tokens=a.max_batched_tokens, ngram=a.ngram)
     t1 = time.perf_counter()
     res = ex.extract_batch(items)
     t2 = time.perf_counter()

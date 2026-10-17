@@ -314,10 +314,16 @@ supplies the prompt settings and tokenizer."""
                 tok.padding_side = "left"
             else:
                 tok, model = load_model(self.model, adapter_dir(self.head_dir))
-            if head.net[1].in_features != len(layers) * model.config.hidden_size:
-                raise ValueError("the head does not match the base model's hidden size and the layers read")
-            if head.net[4].out_features != len(labels(self.schema)) + 1:
-                raise ValueError(f"the head has {head.net[4].out_features - 1} labels, schema {self.schema.name} "
+            if head is None:  # label-token readout: the output layer's rows for the label tokens
+                from relweave.head import LabelHead
+                head = LabelHead.from_model(model, config["label_tokens"])
+                n_labels = len(head.token_ids) - 1
+            else:
+                if head.net[1].in_features != len(layers) * model.config.hidden_size:
+                    raise ValueError("the head does not match the base model's hidden size and the layers read")
+                n_labels = head.net[4].out_features - 1
+            if n_labels != len(labels(self.schema)):
+                raise ValueError(f"the head has {n_labels} labels, schema {self.schema.name} "
                                  f"has {len(labels(self.schema))}")
             self._head = (tok, model, head, layers)
 

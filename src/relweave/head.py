@@ -108,6 +108,43 @@ def gold_targets(gold, types_by_id: dict[str, int], pairs: list[tuple[int, int]]
     return y
 
 
+LABEL_TOKENS = [" " + c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"]  # one per (type, direction)
+NONE_TOKEN = " none"  # the threshold class
+
+
+def label_token_ids(tok, n_labels: int) -> list[int]:
+    """Token ids of the label-token readout: n_labels labels, then the threshold class (NONE) last, each one token."""
+    if n_labels > len(LABEL_TOKENS):
+        raise ValueError(f"{n_labels} labels: the label-token readout has {len(LABEL_TOKENS)} label tokens")
+    ids = []
+    for s in LABEL_TOKENS[:n_labels] + [NONE_TOKEN]:
+        t = tok(s, add_special_tokens=False)["input_ids"]
+        if len(t) != 1:
+            raise ValueError(f"label token {s!r} is {len(t)} tokens for this tokenizer, not one")
+        ids.append(t[0])
+    return ids
+
+
+class LabelHead(torch.nn.Module):
+    """The label-token readout: a probe's scores are the model's own next-token logits for one token per label plus a
+    threshold token (NONE, last), read from the final layer's state. Same output layout and loss as Head, no weights
+    of its own (the output layer's rows for those tokens, frozen; the adapter learns to put the answer there). A head
+    of this kind is served by any LLM server: one-token requests continuing the prompt, logprobs of those tokens."""
+
+    def __init__(self, rows: torch.Tensor, token_ids: list[int]):
+        super().__init__()
+        self.register_buffer("w", rows.detach().clone(), persistent=False)
+        self.token_ids = list(token_ids)
+
+    @classmethod
+    def from_model(cls, model, token_ids: list[int]) -> LabelHead:
+        rows = model.get_output_embeddings().weight[torch.tensor(token_ids, device=model.device)]
+        return cls(rows, token_ids)
+
+    def forward(self, x):
+        return x.float() @ self.w.float().T
+
+
 class Head(torch.nn.Module):
     """MLP over a probe state -> one logit per (type, direction) label plus a threshold logit (last)."""
 
@@ -208,13 +245,16 @@ def load_model(base: str, adapter: str | Path):
     return tok, PeftModel.from_pretrained(model, str(adapter)).eval()
 
 
-def head_config(head: Head, schema: Schema, hidden_size: int, layers=LAYERS, compact_prompt: bool = True,
+def head_config(head: Head | LabelHead, schema: Schema, hidden_size: int, layers=LAYERS, compact_prompt: bool = True,
                 conditioned: bool = False, cut: float = -2.0, margin: float = 0.5) -> dict:
     """What head_config.json records: the schema and label order the head was trained on, the base model's hidden
-    size and the layers read, the probe prompt settings, and the union settings to use with it."""
+    size and the layers read, the readout (an MLP head, or label tokens), the probe prompt settings, and the union
+    settings to use with it."""
     from relweave.schema import MAX_RELATIONS_PER_CHUNK
-    return {"schema": schema.name, "hidden_size": hidden_size, "layers": list(layers),
-            "probe_hidden": head.net[1].out_features, "labels": [list(x) for x in labels(schema)],
+    readout = {"readout": "label", "label_tokens": head.token_ids} if isinstance(head, LabelHead) \
+        else {"probe_hidden": head.net[1].out_features}
+    return {"schema": schema.name, "hidden_size": hidden_size, "layers": list(layers), **readout,
+            "labels": [list(x) for x in labels(schema)],
             "threshold_logit": "last",
             "prompt": {"format": "sentences", "compact_prompt": compact_prompt, "conditioned": conditioned},
             "union": {"cut": cut, "margin": margin, "max_relations": MAX_RELATIONS_PER_CHUNK}}
@@ -225,14 +265,22 @@ def save_head(head: Head, out_dir: str | Path, config: dict) -> None:
     from safetensors.torch import save_file
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    save_file({k: v.detach().cpu().contiguous() for k, v in head.state_dict().items()}, str(out / "head.safetensors"))
+    if not isinstance(head, LabelHead):  # a label-token head has no weights of its own
+        save_file({k: v.detach().cpu().contiguous() for k, v in head.state_dict().items()}, str(out / "head.safetensors"))
     (out / "head_config.json").write_text(json.dumps(config, indent=1) + "\n")
 
 
-def load_head(head_dir: str | Path) -> tuple[Head, dict]:
+def load_head(head_dir: str | Path) -> tuple[Head | None, dict]:
     """(Head in eval mode, config). Reads head.safetensors + head_config.json; a directory with only head.pt (an
-    experiment run) gets its config from train_summary.json (schema, labels; layers LAYERS)."""
+    experiment run) gets its config from train_summary.json (schema, labels; layers LAYERS). A label-token head
+    (config readout "label") has no weights of its own: (None, config); build it with LabelHead.from_model."""
     d = Path(head_dir)
+    if (d / "head_config.json").exists():
+        config = json.loads((d / "head_config.json").read_text())
+        if config.get("readout") == "label":
+            if len(config["label_tokens"]) != len(config["labels"]) + 1:
+                raise ValueError(f"{d}: {len(config['label_tokens'])} label tokens for {len(config['labels'])} labels")
+            return None, config
     if (d / "head.safetensors").exists():
         from safetensors.torch import load_file
         config = json.loads((d / "head_config.json").read_text())

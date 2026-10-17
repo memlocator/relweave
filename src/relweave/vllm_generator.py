@@ -6,7 +6,8 @@ Differences from the transformers backend:
   of that sentence block is dropped (the transformers backend forbids those lines while decoding; the relations kept
   are the same, a loop only costs tokens up to the per-block cap of the grammar, and later blocks are conditioned on
   the loop);
-- vLLM has no bitsandbytes 4-bit. Give it the merged model from scripts/merge_for_vllm.py (the dequantized 4-bit
+- ngram=k drafts k tokens by prompt lookup (speculative decoding); it needs the merged model (no LoRA at run time).
+- vLLM's own bitsandbytes 4-bit is not used. Give it the merged model from scripts/merge_for_vllm.py (the dequantized 4-bit
   base with the adapter merged; adapter=None), or the adapter on the original full-precision base, which scores
   lower because the adapter learned against the 4-bit weights; quantization (e.g. "fp8") is applied by vLLM at load.
 """
@@ -43,7 +44,8 @@ class VllmExtractor:
     def __init__(self, model_id: str, adapter: Path | None, max_new_tokens: int = 2500, fmt: str = STUDENT_FORMAT,
                  compact: bool = False, schema: Schema | None = None, conditioned: bool = False,
                  stop_on_repeat: bool = True, gpu_memory_utilization: float = 0.8, max_model_len: int = 8192,
-                 lora_rank: int = 32, quantization: str | None = None, max_num_batched_tokens: int | None = None):
+                 lora_rank: int = 32, quantization: str | None = None, max_num_batched_tokens: int | None = None,
+                 ngram: int = 0):
         from transformers import AutoTokenizer
         from vllm import LLM
         from vllm.lora.request import LoRARequest
@@ -57,6 +59,11 @@ class VllmExtractor:
         self.llm = LLM(model=model_id, quantization=quantization, enable_lora=adapter is not None, max_lora_rank=lora_rank,
                        gpu_memory_utilization=gpu_memory_utilization, max_model_len=max_model_len,
                        enable_prefix_caching=True,
+                       # prompt-lookup speculative decoding: entity lines copy names from the text, so drafts taken
+                       # from the prompt are often right; greedy output is unchanged (vLLM checks drafts against the
+                       # grammar); not with a LoRA served at run time
+                       **({"speculative_config": {"method": "ngram", "num_speculative_tokens": ngram,
+                                                  "prompt_lookup_min": 2, "prompt_lookup_max": 4}} if ngram else {}),
                        **({"max_num_batched_tokens": max_num_batched_tokens} if max_num_batched_tokens else {}))
         self.lora = LoRARequest("generator", 1, str(adapter)) if adapter is not None else None
 

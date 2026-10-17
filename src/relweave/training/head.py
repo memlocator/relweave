@@ -27,13 +27,15 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
                own_results: list[Path] = (), base_head: Path | None = None, schema=None, n_examples: int = 2400,
                max_probes: int = 150, lm_weight: float = 0.5, grad_accum: int = 8, seed: int = 0,
                list_repeat: int = 0, upcast: bool = True, reserve_mb: int = 700, layers=(-1, -9),
-               cut: float = -2.0, margin: float = 0.5) -> dict:
+               cut: float = -2.0, margin: float = 0.5, readout: str = "mlp") -> dict:
     """train_pool: labelled chunk files; generator: the generator directory (its adapter is the starting point and
     its settings say whether the schema is in the prompt); own_results: the generator's results on train_pool
     chunks (relweave.formats.save_results files); base_head: an earlier head directory or head.pt to continue;
     schema: name, Schema or path.py:NAME (default: the training chunks' own schema). upcast=False skips PEFT's
     fp32 copies of embeddings and lm_head (needed for a 4B model on 8 GB). cut, margin: union settings recorded in
-    head_config.json. Returns the train summary."""
+    head_config.json. readout: "mlp" (an MLP on the layers' states) or "label" (the model's own next-token logits for
+    one token per label plus a threshold token, final layer only: servable by an LLM server as one-token requests).
+    Returns the train summary."""
     import torch
     torch.manual_seed(seed)
     free, _ = torch.cuda.mem_get_info()
@@ -43,7 +45,8 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from relweave.extract import generator_settings
     from relweave.formats import FORMATS, chat_messages, generation_prompt, load_results
-    from relweave.head import Head, adapter_dir, aligned_targets, at_loss, entity_lines, labels, load_head, pack_ids
+    from relweave.head import (Head, LabelHead, adapter_dir, aligned_targets, at_loss, entity_lines, label_token_ids,
+                               labels, load_head, pack_ids)
     from relweave.schema import ExtractionOutput, load_schema, registered_schema
     from relweave.training.eval import align as _align
 
@@ -74,8 +77,12 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
     except FileNotFoundError:
         conditioned = False
     labs = labels(schema)
-    dim = model.config.hidden_size * len(layers)
-    head = Head(dim, len(labs)).cuda()
+    if readout == "label":  # no weights of its own: the output layer's rows for the label tokens (frozen)
+        layers = (-1,)
+        head = LabelHead.from_model(model, label_token_ids(tok, len(labs))).cuda()
+        base_head = None
+    else:
+        head = Head(model.config.hidden_size * len(layers), len(labs)).cuda()
     sd = None
     if base_head is not None and Path(base_head).is_dir():
         sd = load_head(base_head)[0].state_dict()
@@ -121,7 +128,9 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
     print(f"stage 1: {len(examples)} examples ({sum(e[0] == 'own' for e in examples)} with a model's own entity lines)", flush=True)
 
     params = [p for p in model.parameters() if p.requires_grad]
-    opt = torch.optim.AdamW([{"params": params, "lr": 1e-4}, {"params": head.parameters(), "lr": 5e-4}], weight_decay=0.0)
+    groups = [{"params": params, "lr": 1e-4}] + ([{"params": list(head.parameters()), "lr": 5e-4}]
+                                                 if list(head.parameters()) else [])
+    opt = torch.optim.AdamW(groups, weight_decay=0.0)
     total = math.ceil(len(examples) / grad_accum)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / max(1, total // 10)) * max(0.05, 1 - s / total))
     model.train(); head.train()
@@ -183,7 +192,8 @@ def train_head(train_pool: list[Path], out: Path, generator: Path, model_id: str
                "lm_weight": lm_weight, "model": str(model_id), "train_pool": [str(p) for p in train_pool],
                "own_res": [str(p) for p in own_results], "base_adapter": str(adapter),
                "base_head": str(base_head) if base_head else None, "seed": seed, "list_repeat": list_repeat,
-               "skipped_oom": skipped, "schema": name, "conditioned": conditioned, "labels": [list(x) for x in labs]}
+               "skipped_oom": skipped, "schema": name, "conditioned": conditioned, "labels": [list(x) for x in labs],
+               "readout": readout}
     (out / "train_summary.json").write_text(json.dumps(summary, indent=1))
     print(f"stage 1 trained ({skipped} examples skipped for memory)", flush=True)
     return summary

@@ -348,12 +348,15 @@ def train_head_cmd(chunks: list[Path] = typer.Argument(..., help="labelled train
                    max_probes: int = 150, seed: int = 0, list_repeat: int = 0,
                    upcast: bool = typer.Option(False, help="PEFT's fp32 copies of embeddings and lm_head (off: fits "
                                                "a 4B model on 8 GB)"),
-                   reserve_mb: int = 700) -> None:
+                   reserve_mb: int = 700,
+                   readout: str = typer.Option("mlp", help="mlp (an MLP on hidden states) or label (the model's own "
+                                               "next-token logits for one token per label: servable by vLLM)")) -> None:
     """Joint training of the pair head and its adapter (needs the train extra)."""
     from relweave.extract import DEFAULT_MODEL
     from relweave.training.head import train_head
     summary = train_head(chunks, out, generator, model or DEFAULT_MODEL, own_results, base_head, _schema(schema),
-                         examples, max_probes, seed=seed, list_repeat=list_repeat, upcast=upcast, reserve_mb=reserve_mb)
+                         examples, max_probes, seed=seed, list_repeat=list_repeat, upcast=upcast, reserve_mb=reserve_mb,
+                         readout=readout)
     typer.echo(json.dumps({k: v for k, v in summary.items() if k != "labels"}, indent=1))
 
 
