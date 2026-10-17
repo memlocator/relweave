@@ -40,7 +40,7 @@ relweave eval gold_val/test.jsonl runs/val.jsonl $S --by-type 2>/dev/null | tee 
 
 if [ "$HEAD" = 1 ]; then
   n=$(grep -c . gold_train/train.jsonl)
-  if [ ! -s runs/own.jsonl ]; then
+  if [ ! -s runs/own.jsonl ] && [ "$ENGINE" = transformers ]; then  # vLLM: a 5-record timing is mostly its start-up
     t0=$(date +%s); head -5 gold_train/train.jsonl > runs/time5.jsonl
     "$RELWEAVE_GEN" generate runs/time5.jsonl $S --generator runs/gen --out runs/time5_out.jsonl --engine "$ENGINE" > /dev/null 2>&1
     per=$(( ($(date +%s) - t0) / 5 ))
