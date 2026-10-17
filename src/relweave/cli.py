@@ -18,6 +18,11 @@ import typer
 from relweave.chunk import DENSE_WORDS, MAX_WORDS
 from relweave.zeroshot import DEFAULT_THRESHOLD
 
+ENGINE_HELP = "transformers, vllm (the generator on vLLM in this process; vllm and vllm-bnb-plugin installed next to relweave) or auto (vLLM when installed)"
+VLLM_FORMAT_HELP = "vLLM weight format: auto (the most precise that fits), bf16, fp8 or 4bit"
+VLLM_MEMORY_HELP = "vLLM's share of the GPU (default: what the card allows)"
+VLLM_SEQS_HELP = "sequences vLLM generates at once (default: as many as fit)"
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
@@ -60,13 +65,10 @@ def run(files: list[Path] = typer.Argument(..., help="text files"),
                                                              "(default: the head's saved setting, else off)"),
         dense_margin: float | None = typer.Option(None, help="head margin on those chunks (default: the head's saved "
                                                              "setting, else --margin)"),
-        engine: str = typer.Option("transformers", help="transformers, vllm (the generator on vLLM in this process: "
-                                   "vLLM and vllm-bnb-plugin installed next to relweave) or auto (vLLM when installed)"),
-        vllm_format: str = typer.Option("auto", help="vLLM weight format: auto (the most precise that fits), bf16, "
-                                        "fp8 or 4bit"),
-        vllm_memory: float | None = typer.Option(None, help="vLLM's share of the GPU (default: what the card allows)"),
-        vllm_max_seqs: int | None = typer.Option(None, help="sequences vLLM generates at once (default: as many "
-                                                 "as fit)"),
+        engine: str = typer.Option("transformers", help=ENGINE_HELP),
+        vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
+        vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
+        vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
         no_entity_tagger: bool = typer.Option(False, help="run without the entity tagger (faster; long lists and tables lose names)"),
         dense_words: int | None = typer.Option(None, help="words per chunk for tables and lists (default: the head's own setting, else 80; 0: chunk them as prose)"),
         reserve_mb: int = typer.Option(500, help="GPU memory left free"),
@@ -114,6 +116,8 @@ label_app = typer.Typer(add_completion=False, no_args_is_help=True,
 app.add_typer(label_app, name="label")
 
 SCHEMA_HELP = "schema: a registered name or path/to/module.py:NAME"
+
+
 
 
 def _schema(spec: str | None):
@@ -262,11 +266,16 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              model: str | None = typer.Option(None, help="base model path or hub id"),
              schema: str | None = typer.Option(None, help=SCHEMA_HELP),
              batch_size: str = typer.Option("auto", help="1, 2, 4, 8 ... or auto"),
-             limit: int | None = None, reserve_mb: int = 500) -> None:
+             limit: int | None = None, reserve_mb: int = 500,
+             engine: str = typer.Option("transformers", help=ENGINE_HELP),
+             vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
+             vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
+             vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP)) -> None:
     """The generator's results on every chunk of a chunk file."""
     from relweave.training.predict import generate as run
     gen, _ = _parts(weights, generator, None, need_head=False)
-    n = run(chunks, out, gen, model, _schema(schema), _batch(batch_size), reserve_mb, limit)
+    n = run(chunks, out, gen, model, _schema(schema), _batch(batch_size), reserve_mb, limit, engine=engine,
+            vllm_format=vllm_format, vllm_memory=vllm_memory, vllm_max_seqs=vllm_max_seqs)
     typer.echo(f"{n} results -> {out}")
 
 

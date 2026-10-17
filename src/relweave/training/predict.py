@@ -13,12 +13,16 @@ from relweave.training.data import load_chunks
 
 
 def generate(chunks_path: Path, out: Path, generator: Path, model: str | None = None, schema=None,
-             batch_size: int | str = "auto", reserve_mb: int = 500, limit: int | None = None) -> int:
+             batch_size: int | str = "auto", reserve_mb: int = 500, limit: int | None = None,
+             engine: str = "transformers", vllm_format: str = "auto", vllm_memory: float | None = None,
+             vllm_max_seqs: int | None = None) -> int:
     """The generator's results on every chunk -> out (JSONL). Returns the number of chunks written; a chunk whose
-    generation raised is saved as an error result."""
+    generation raised is saved as an error result. engine "vllm": the generator on vLLM in this process (several
+    times faster; relweave.serving picks format and parallelism, the vllm_* arguments override)."""
     from relweave.formats import ExtractionResult
     chunks = load_chunks(chunks_path)[:limit]
-    ce = ChunkExtractor(generator, None, model, schema, reserve_mb=reserve_mb)
+    ce = ChunkExtractor(generator, None, model, schema, reserve_mb=reserve_mb, engine=engine, vllm_format=vllm_format,
+                        vllm_memory=vllm_memory, vllm_max_seqs=vllm_max_seqs)
     got = ce.generate_many([(c.chunk_id, c.text) for c in chunks], batch_size)
     results = [r if not isinstance(r, Exception) else
                ExtractionResult(chunk_id=c.chunk_id, raw="", output=None, error=f"{type(r).__name__}: {r}", fmt="sentences")
