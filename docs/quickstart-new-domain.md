@@ -91,6 +91,11 @@ Check: the import reports few dropped mentions and relations. Read 20 labelled c
 The test set gets a second, independent pass by a different agent (or model) with the same task, imported to
 `gold_test_b`: two passes show how far labellers agree, which is the level a model can be expected to reach.
 
+**Label the test set first, with two labellers, and judge both passes (step 6) before labelling training data.** The
+model learns its labeller's habits, completeness included: on US court opinions a pass that found 46% of the judged-true
+relations taught a model that found 38%, while the other labeller found 74%. Label training and validation with the
+labeller whose pass scores higher when judged.
+
 ## 5. Train and evaluate on validation
 
 ```bash
