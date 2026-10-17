@@ -205,6 +205,7 @@ serving the merged generator, relweave.remote) instead of loading the generator;
 supplies the prompt settings and tokenizer."""
 
     generator_url: str | None = None
+    engine = "transformers"  # or "vllm"; set in __init__
 
     def __init__(self, generator: str | Path, head: str | Path | None, model: str | None = None, schema=None,
                  device: str = "cuda", reserve_mb: int = 500, group: int = 20, cut: float | None = None,
