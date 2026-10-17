@@ -839,6 +839,14 @@ gained most: JUDGE_IN 0.36 to 0.60, REPRESENTS 0.34 to 0.40, PARTY_IN 0.42 to 0.
 vLLM). On the 26 unseen benchmark documents vLLM scored +0.017 against transformers (95% 0.000 to +0.045, Section 5.12), so the
 engine is unlikely to account for a loss, but it was not measured on this domain.
 
+**How far fixing the counsel blocks could go.** An oracle bound, from verdicts already in the pool: adding the Opus
+labeller's relations of chosen types to the round-2 output (a handful of claims whose names differ slightly stay
+unjudged and count as false). With perfect REPRESENTS the system would score 0.592; with perfect REPRESENTS, PARTY_IN
+and JUDGE_IN, the types of the counsel and caption blocks, 0.663; with every type at the labeller's level, 0.752.
+Reaching the pass mark through the weak blocks alone therefore needs the model to match the labeller on all three
+types, not to improve on one. A labeller that misses 43% of the pool also caps a model trained on its labels: copying
+it perfectly would give about 0.68 at the model's precision.
+
 **What this means for a user.** The recipe runs end to end on a new domain on an 8 GB card. Generation runs on vLLM. Only
 the head at full size needs a larger card. With 29 or 64 training documents the result reaches the level of a careful
 single labelling pass, not that of the best labeller, and doubling the documents moved it by about +0.07. Three lessons carry over. The model did not exceed its labeller, and a
