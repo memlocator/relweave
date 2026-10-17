@@ -213,7 +213,8 @@ supplies the prompt settings and tokenizer."""
                  margin: float | None = None, max_new_tokens: int | None = None, generator_url: str | None = None,
                  share_base: bool = True, dense_entities_only: bool | None = None, dense_margin: float | None = None,
                  engine: str = DEFAULT_ENGINE, vllm_format: str = "auto", vllm_memory: float | None = None,
-                 vllm_max_seqs: int | None = None, weights_dir: str | Path | None = None):
+                 vllm_max_seqs: int | None = None, weights_dir: str | Path | None = None,
+                 typed_relations: bool = False):
         from relweave import union as un
         if engine == "auto":  # vLLM when it is installed
             import importlib.util
@@ -221,6 +222,8 @@ supplies the prompt settings and tokenizer."""
         if engine not in ("transformers", "vllm"):
             raise ValueError(f"engine {engine!r}: transformers, vllm or auto")
         self.engine, self.vllm_format, self.vllm_memory, self.vllm_max_seqs = engine, vllm_format, vllm_memory, vllm_max_seqs
+        # relation lines may only use types whose endpoint types fit the entity lines already written (and no self-loops)
+        self.typed_relations = typed_relations
         self.weights_dir = Path(weights_dir) if weights_dir is not None else Path(generator).parent
         if device != "cuda":
             raise ValueError("relweave needs a CUDA device ('cuda'): the base model is 4-bit")
@@ -280,7 +283,8 @@ supplies the prompt settings and tokenizer."""
             shared = dict(shared_model=self._shared_base(), adapter_name="generator") if self.share_base else {}
             self._gen = QwenExtractor(model_id=self.model, adapter=adapter_dir(self.generator_dir), constrained=True,
                                       fmt="sentences", compact=self.compact, stop_on_repeat=True, schema=self.schema,
-                                      conditioned=self.conditioned, max_new_tokens=self.max_new_tokens, **shared)
+                                      conditioned=self.conditioned, max_new_tokens=self.max_new_tokens,
+                                      typed_relations=self.typed_relations, **shared)
 
     def _vllm_generator(self):
         """The generator on vLLM in this process, in the format and parallelism the card allows

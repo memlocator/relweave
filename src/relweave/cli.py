@@ -272,12 +272,14 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              engine: str = typer.Option(DEFAULT_ENGINE, help=ENGINE_HELP),
              vllm_format: str = typer.Option("auto", help=VLLM_FORMAT_HELP),
              vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
-             vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP)) -> None:
+             vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
+             typed_relations: bool = typer.Option(False, help="relation lines only of types whose endpoint types fit "
+                                                  "the entity lines written (transformers engine)")) -> None:
     """The generator's results on every chunk of a chunk file."""
     from relweave.training.predict import generate as run
     gen, _ = _parts(weights, generator, None, need_head=False)
     n = run(chunks, out, gen, model, _schema(schema), _batch(batch_size), reserve_mb, limit, engine=engine,
-            vllm_format=vllm_format, vllm_memory=vllm_memory, vllm_max_seqs=vllm_max_seqs)
+            vllm_format=vllm_format, vllm_memory=vllm_memory, vllm_max_seqs=vllm_max_seqs, typed_relations=typed_relations)
     typer.echo(f"{n} results -> {out}")
 
 
