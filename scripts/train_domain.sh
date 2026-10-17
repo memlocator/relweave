@@ -17,6 +17,9 @@ set -uo pipefail
 SCHEMA=${1:?usage: train_domain.sh module.py:NAME}
 EPOCHS=${EPOCHS:-3} LR=${LR:-1e-4} MAX_PROBES=${MAX_PROBES:-200} HEAD=${HEAD:-1} BASE=${BASE:-chrullis/relweave-4b-base}
 ENGINE=${ENGINE:-auto} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave}
+# training only: a fragmented GPU allocator is the usual out-of-memory on 8 GB (vLLM manages its own memory and must
+# not get this setting, so it is not exported)
+TRAIN_ENV=(PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True)
 S="--schema $SCHEMA"
 for f in gold_train/train.jsonl gold_val/test.jsonl gold_test/test.jsonl; do
   [ -s "$f" ] || { echo "missing $f (recipe-own-schema, steps 3-4)"; exit 1; }
@@ -30,7 +33,7 @@ step() { local n=$1; shift; log "step $n"; "$@" > "runs/$n.log" 2>&1; local st=$
 once() { local out=$1; shift; if [ -s "$out" ]; then log "step $1: done before ($out), skipped"; return 0; fi; step "$@"; }
 
 [ -d models/base/generator ] || step download hf download "$BASE" --local-dir models/base || exit 1
-once runs/gen/adapter/adapter_config.json train-generator relweave train-generator gold_train/train.jsonl $S --init-adapter models/base/generator \
+once runs/gen/adapter/adapter_config.json train-generator env "${TRAIN_ENV[@]}" relweave train-generator gold_train/train.jsonl $S --init-adapter models/base/generator \
   --lr "$LR" --epochs "$EPOCHS" --conditioned --epoch-adapters --out runs/gen || exit 1
 for s in val test; do
   once runs/$s.jsonl generate-$s "$RELWEAVE_GEN" generate gold_$s/test.jsonl $S --generator runs/gen --out runs/$s.jsonl --engine "$ENGINE" || exit 1
@@ -47,9 +50,9 @@ if [ "$HEAD" = 1 ]; then
     log "the head needs the generator on all $n training records: about $(( per * n / 60 )) min at ${per}s per record"
   fi
   once runs/own.jsonl generate-train "$RELWEAVE_GEN" generate gold_train/train.jsonl $S --generator runs/gen --out runs/own.jsonl --engine "$ENGINE" || exit 1
-  once runs/head/head_config.json train-head relweave train-head gold_train/train.jsonl $S --generator runs/gen --own-results runs/own.jsonl \
+  once runs/head/head_config.json train-head env "${TRAIN_ENV[@]}" relweave train-head gold_train/train.jsonl $S --generator runs/gen --own-results runs/own.jsonl \
     --max-probes "$MAX_PROBES" --out runs/head || exit 1
-  once runs/tagger/tagger.pt train-tagger relweave train-tagger gold_train/train.jsonl $S --head runs/head --out runs/tagger || true
+  once runs/tagger/tagger.pt train-tagger env "${TRAIN_ENV[@]}" relweave train-tagger gold_train/train.jsonl $S --head runs/head --out runs/tagger || true
   for s in val test; do
     once runs/${s}_scores.json score-$s relweave score gold_$s/test.jsonl runs/$s.jsonl $S --generator runs/gen --head runs/head \
       --out runs/${s}_scores.json || exit 1
