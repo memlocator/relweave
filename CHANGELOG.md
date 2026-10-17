@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+- **The generator runs on vLLM by default** (`engine="auto"`: vLLM when it is installed, else transformers). Same
+  results (judged F1 0.719 against 0.702 on 26 unseen documents, paired +0.017, 95% 0.000 to +0.045), about 3x faster
+  end to end. The weight format (bf16, fp8, or the 4-bit base with the generator as a LoRA) and parallelism are chosen
+  from the card (`relweave.serving.plan`); knobs `--engine`, `--vllm-format`, `--vllm-memory`, `--vllm-max-seqs` on
+  `run` and `generate`, the same on `Extractor`. On a large card the pair head stays loaded next to vLLM; on a small one
+  vLLM stops after generating. vLLM lives in its own environment (README, "Faster: the generator on vLLM").
+- **One base model, adapters attached by name** (`share_base`, default): the generator and head share one 4-bit copy.
+  `--separate-models` keeps the old loading.
+- **The tagger reads the text once** and keeps only the layers it reads: a 7,000-token document fits 8 GB.
+- **The whitepaper lives here** (`docs/whitepaper.md`); `docs/methodology.md` is folded into its appendices.
+
+### Added
+
+- `relweave generate --typed-relations` (both engines): after the entity lines, only relation types whose endpoint
+  types fit the listed entities can be written. On court opinions it removed every illegal relation line (35% before)
+  and raised judged F1 by 0.02-0.03. `TYPED=1` in `scripts/train_domain.sh`.
+- A remote generator (`--generator-url`, e.g. a vLLM docker server) is asked for the LoRA named `generator` when it
+  serves one; README examples for merged and LoRA serving.
+- `relweave schema`: a schema's types, endpoints and definitions as markdown tables, generated from the classes.
+- `relweave train-head --readout label`: a pair head read from the model's own next-token logits (one label token per
+  type plus a threshold token), servable as one-token requests; F1 0.823 against 0.838 for the MLP head.
+- `relweave run --dense-entities-only` / `--dense-margin`: dense chunks generated as entity lines only, relations from
+  the pair head (off by default).
+- `scripts/train_domain.sh`: resumes where a run stopped (a step whose output exists is skipped); `ENGINE` and
+  `RELWEAVE_GEN` generate on vLLM from its own environment while training stays in the train environment; the
+  allocator setting that avoids 8 GB out-of-memory errors applies to training steps only.
+
+### Results
+
+- A new domain through the recipe (US court opinions, whitepaper Section 5.13): judged F1 0.50, level with a Sonnet
+  labelling pass, below an Opus pass (0.74) and below the pass mark set in advance (0.65). The model inherits its
+  labeller's completeness: label training data with the labeller that judges best on test.
+
 ## 0.3.0
 
 ### Changed
