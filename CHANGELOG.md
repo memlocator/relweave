@@ -34,8 +34,8 @@
 ### Results
 
 - A new domain through the recipe (US court opinions, whitepaper Section 5.13): judged F1 0.50, level with a Sonnet
-  labelling pass, below an Opus pass (0.74) and below the pass mark set in advance (0.65). The model inherits its
-  labeller's completeness: label training data with the labeller that judges best on test.
+  labelling pass, below an Opus pass (0.74) and below the pass mark set in advance (0.65). The model did not exceed
+  its labeller; relabelling with the more complete one did not measurably lift it at 29 training documents.
 
 ## 0.3.0
 

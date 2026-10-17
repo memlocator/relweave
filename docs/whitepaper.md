@@ -33,8 +33,8 @@ against 0.70 for those it writes, and training on completed labels does not chan
 
 Taken through the recipe to a new domain (US court opinions, eight relation types, 29 training documents, labelled by
 agents), the system reaches judged F1 0.50: level with a Sonnet labelling pass (0.54) but below an Opus pass (0.74) and
-below the pass mark we set in advance (0.65). It learns its labels (0.68 against them) but is limited by their
-completeness and by recall in dense counsel and caption blocks (Section 5.13).
+below the pass mark we set in advance (0.65). It learns its labels (0.68 against them) but does not exceed its
+labeller, and misses relations in dense counsel and caption blocks (Section 5.13).
 
 ## 1. Introduction
 
@@ -773,9 +773,11 @@ confirmed by the judge of the other model) but pass A finds far fewer of the tru
 **What the model learned from which labeller.** All numbers below are on the final pool (760 claims, 330 judged
 true; 58 test documents). Judged, the Sonnet labelling scores F1 0.535 and the Opus labelling 0.737. Trained on
 Sonnet's labels, the generator alone scored 0.396 and the union with the pair head 0.456 (precision 0.44 to 0.89;
-+0.060 paired, 95% -0.000 to +0.126). The model inherits its labeller's completeness. Relabelling training and
-validation with Opus added 51% more relations; the generator alone then found more true relations (137 against 118)
-at the same low precision (0.40), +0.012 F1 (not significant).
++0.060 paired, 95% -0.000 to +0.126), finding about as many true relations as its labeller (pooled recall 0.36
+against 0.37): it did not exceed its labeller. Relabelling training and validation with Opus added 51% more relations;
+the generator alone then found more true relations (137 against 118) at the same low precision (0.40), but F1 rose
+only +0.012 (not significant), and the union +0.010 (95% -0.120 to +0.173). A more complete labeller did not
+measurably lift the model at 29 training documents; the amount of training data is as likely a limit as the labels.
 
 **Why precision was low.** Two causes, both measured. (1) Decoding: the generator wrote 35% of its relation lines with
 endpoint types the schema forbids (1,148 lines, 372 illegal, discarded at parsing), in both engines alike. Typed
@@ -810,8 +812,8 @@ three relations at once, the same list structure that cost recall in Section 5.1
 
 **What this means for a user.** The recipe runs end to end on a new domain on an 8 GB card. Generation runs on vLLM. Only
 the head at full size needs a larger card. With 29 training documents the result reaches the level of a careful single
-labelling pass, not that of the best labeller. Three lessons carry over. Label with the most complete labeller you can
-afford: the model will not exceed it. Use typed decoding when the schema's endpoint types are strict. And add training
+labelling pass, not that of the best labeller. Three lessons carry over. The model did not exceed its labeller, and a
+more complete labeller alone did not lift it measurably at this size. Use typed decoding when the schema's endpoint types are strict. And add training
 documents of the structures where recall is lowest, the counsel and caption blocks here, before anything else; that
 step was not run here.
 

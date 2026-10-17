@@ -92,9 +92,11 @@ The test set gets a second, independent pass by a different agent (or model) wit
 `gold_test_b`: two passes show how far labellers agree, which is the level a model can be expected to reach.
 
 **Label the test set first, with two labellers, and judge both passes (step 6) before labelling training data.** The
-model learns its labeller's habits, completeness included: on US court opinions a pass that found 37% of the judged-true
-relations taught a model that found 36%, while the other labeller found 59%. Label training and validation with the
-labeller whose pass scores higher when judged.
+model does not exceed its labeller: on US court opinions a pass that found 37% of the judged-true relations taught a
+model that found 36%, while the other labeller found 59%. Relabelling the 29 training documents with the more complete
+labeller did not measurably lift the model (+0.01, within noise), so the limit there may be the amount of training
+data as much as the labels. Use the more complete labeller if you can afford it, but do not expect it alone to close
+the gap.
 
 ## 5. Train and evaluate on validation
 
