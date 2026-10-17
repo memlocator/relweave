@@ -21,6 +21,9 @@ from relweave.formats import FORMATS, STUDENT_FORMAT, ExtractionResult, chat_mes
 from relweave.schema import BUSINESS, Schema
 
 
+BLOCK_START = "\nS"  # where the entity lines end and the first sentence block starts
+
+
 def drop_repeats(raw: str) -> str:
     """Stop on repeat after the fact: within a sentence block, lines after the first relation line that repeats one
     already written in the answer are dropped, up to the next block header."""
@@ -95,33 +98,31 @@ class VllmExtractor:
             pass
 
     def _params(self, text: str, entities_only: bool = False, entity_types: dict[int, str] | None = None,
-                max_tokens: int | None = None):
+                max_tokens: int | None = None, stop: list[str] | None = None):
         from vllm import SamplingParams
         from vllm.sampling_params import StructuredOutputsParams
         grammar = self.format.ebnf_for(0 if entities_only else self.format.grammar_key(text), entity_types)
-        return SamplingParams(temperature=0.0, max_tokens=max_tokens or self.max_new_tokens,
+        return SamplingParams(temperature=0.0, max_tokens=max_tokens or self.max_new_tokens, stop=stop,
                               structured_outputs=StructuredOutputsParams(grammar=grammar))
 
-    def _typed_relations(self, items, prompts, first, entities_only):
+    def _typed_relations(self, items, first, entities_only):
         """The relation lines of each chunk, written after its entity lines under a grammar compiled for exactly those
         entities (only types whose endpoint types fit, no self-loops), as the transformers backend's
-        TypedRelationGrammar switches once the entity lines are complete. The second request continues from the
-        first's own tokens (prefix caching keeps that cheap). Returns the full answers."""
+        TypedRelationGrammar switches once the entity lines are complete. The first request runs under the full
+        grammar and stops where the first sentence block starts (an entities-only grammar would forbid the block the
+        model wants to write, and a trained model then writes entity lines until it runs out of tokens); the second
+        continues from the entity lines (prefix caching keeps that cheap). A chunk that ended without a block has no
+        relations and keeps its answer. Returns the full answers."""
         from vllm.inputs import TokensPrompt
         from relweave.generator import ENTITY_LINE
         texts = [o.outputs[0].text for o in first]
-        # the entities-only request ends with the end-of-turn token; the continuation must not include it, or the
-        # model would write its relation lines after its own turn has ended
-        stop = {i for i in (self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>"))
-                if isinstance(i, int)}
-        todo = [k for k, (cid, _, _) in enumerate(items) if cid not in entities_only]
+        todo = [k for k, (cid, _, _) in enumerate(items)
+                if cid not in entities_only and first[k].outputs[0].stop_reason == BLOCK_START]
         reqs, params = [], []
         for k in todo:
+            texts[k] += "\n"  # the stop string's newline ends the last entity line
             types = {int(m.group(1)): m.group(2) for line in texts[k].split("\n") if (m := ENTITY_LINE.match(line))}
-            out = list(first[k].outputs[0].token_ids)
-            while out and out[-1] in stop:
-                out.pop()
-            ids = list(first[k].prompt_token_ids) + out
+            ids = list(first[k].prompt_token_ids) + self.tokenizer.encode(texts[k], add_special_tokens=False)
             reqs.append(TokensPrompt(prompt_token_ids=ids))
             params.append(self._params(items[k][1], entity_types=types,
                                        max_tokens=max(self.max_new_tokens - len(first[k].outputs[0].token_ids), 1)))
@@ -140,11 +141,13 @@ class VllmExtractor:
                    for _, text, known in items]
         t0 = time.perf_counter()
         typed = self.typed_relations
-        outs = self.llm.generate(prompts, [self._params(text, typed or cid in entities_only) for cid, text, _ in items],
+        outs = self.llm.generate(prompts, [self._params(text, cid in entities_only,
+                                                        stop=[BLOCK_START] if typed and cid not in entities_only else None)
+                                           for cid, text, _ in items],
                                  lora_request=self.lora,
                                  use_tqdm=False)
         _check_finished(outs)
-        raws = self._typed_relations(items, prompts, outs, entities_only) if typed else [o.outputs[0].text for o in outs]
+        raws = self._typed_relations(items, outs, entities_only) if typed else [o.outputs[0].text for o in outs]
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []
         for (cid, text, _), raw in zip(items, raws):

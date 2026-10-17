@@ -6,20 +6,17 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from relweave.vllm_generator import VllmExtractor, _check_finished
-
-EOS = 99
+from relweave.vllm_generator import BLOCK_START, VllmExtractor, _check_finished
 
 
 class FakeTokenizer:
-    eos_token_id = EOS
-
-    def convert_tokens_to_ids(self, token):
-        return EOS
+    def encode(self, text, add_special_tokens=True):
+        return [ord(c) for c in text]
 
 
-def _out(text, token_ids, finish="stop", prompt_ids=(1, 2)):
-    return NS(prompt_token_ids=list(prompt_ids), outputs=[NS(text=text, token_ids=list(token_ids), finish_reason=finish)])
+def _out(text, token_ids, finish="stop", prompt_ids=(1, 2), stop_reason=None):
+    return NS(prompt_token_ids=list(prompt_ids),
+              outputs=[NS(text=text, token_ids=list(token_ids), finish_reason=finish, stop_reason=stop_reason)])
 
 
 @pytest.fixture
@@ -44,12 +41,20 @@ def _extractor(answers):
     return ex, sent
 
 
-def test_the_relation_request_continues_without_the_end_of_turn_token(fake_vllm):
+def test_the_relation_request_continues_from_the_entity_lines(fake_vllm):
     ex, sent = _extractor([_out("S1\nR X E1 E2 asserted\n", [7])])
-    first = [_out("E1 Person: Ann\nE2 Org: Acme\n", [5, 6, EOS])]
-    texts = ex._typed_relations([("c1", "text", None)], ["p"], first, frozenset())
-    assert sent == [{"ids": [1, 2, 5, 6]}]
+    # the first request stopped at the first block; vLLM leaves the stop string out of the text
+    first = [_out("E1 Person: Ann\nE2 Org: Acme", [5, 6, 7], stop_reason=BLOCK_START)]
+    texts = ex._typed_relations([("c1", "text", None)], first, frozenset())
+    assert sent == [{"ids": [1, 2, *(ord(c) for c in "E1 Person: Ann\nE2 Org: Acme\n")]}]
     assert texts == ["E1 Person: Ann\nE2 Org: Acme\nS1\nR X E1 E2 asserted\n"]
+
+
+def test_a_chunk_that_ended_without_a_block_keeps_its_answer(fake_vllm):
+    ex, sent = _extractor([])
+    first = [_out("E1 Person: Ann\n", [5])]
+    assert ex._typed_relations([("c1", "text", None)], first, frozenset()) == ["E1 Person: Ann\n"]
+    assert sent == []
 
 
 def test_an_unfinished_request_raises():
