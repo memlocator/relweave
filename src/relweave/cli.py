@@ -274,7 +274,7 @@ def generate(chunks: Path = typer.Argument(..., help="chunk file"),
              vllm_memory: float | None = typer.Option(None, help=VLLM_MEMORY_HELP),
              vllm_max_seqs: int | None = typer.Option(None, help=VLLM_SEQS_HELP),
              typed_relations: bool = typer.Option(False, help="relation lines only of types whose endpoint types fit "
-                                                  "the entity lines written (transformers engine)")) -> None:
+                                                  "the entity lines written")) -> None:
     """The generator's results on every chunk of a chunk file."""
     from relweave.training.predict import generate as run
     gen, _ = _parts(weights, generator, None, need_head=False)

@@ -45,7 +45,7 @@ class VllmExtractor:
                  compact: bool = False, schema: Schema | None = None, conditioned: bool = False,
                  stop_on_repeat: bool = True, gpu_memory_utilization: float = 0.8, max_model_len: int = 8192,
                  lora_rank: int = 32, quantization: str | None = None, max_num_batched_tokens: int | None = None,
-                 ngram: int = 0, max_num_seqs: int | None = None):
+                 ngram: int = 0, max_num_seqs: int | None = None, typed_relations: bool = False):
         from transformers import AutoTokenizer
         from vllm import LLM
         from vllm.lora.request import LoRARequest
@@ -53,6 +53,7 @@ class VllmExtractor:
         self.fmt, self.schema, self.compact, self.conditioned = fmt, schema or BUSINESS, compact, conditioned
         self.format = FORMATS[fmt].with_schema(self.schema)
         self.max_new_tokens, self.stop_on_repeat = max_new_tokens, stop_on_repeat
+        self.typed_relations = typed_relations
         self.name = f"qwen_finetuned_{fmt}_vllm"
         tok_source = adapter if adapter is not None and (Path(adapter) / "tokenizer_config.json").exists() else model_id
         self.tokenizer = AutoTokenizer.from_pretrained(str(tok_source))
@@ -84,12 +85,34 @@ class VllmExtractor:
         except Exception:  # noqa: BLE001
             pass
 
-    def _params(self, text: str, entities_only: bool = False):
+    def _params(self, text: str, entities_only: bool = False, entity_types: dict[int, str] | None = None,
+                max_tokens: int | None = None):
         from vllm import SamplingParams
         from vllm.sampling_params import StructuredOutputsParams
-        grammar = self.format.ebnf_for(0 if entities_only else self.format.grammar_key(text))
-        return SamplingParams(temperature=0.0, max_tokens=self.max_new_tokens,
+        grammar = self.format.ebnf_for(0 if entities_only else self.format.grammar_key(text), entity_types)
+        return SamplingParams(temperature=0.0, max_tokens=max_tokens or self.max_new_tokens,
                               structured_outputs=StructuredOutputsParams(grammar=grammar))
+
+    def _typed_relations(self, items, prompts, first, entities_only):
+        """The relation lines of each chunk, written after its entity lines under a grammar compiled for exactly those
+        entities (only types whose endpoint types fit, no self-loops), as the transformers backend's
+        TypedRelationGrammar switches once the entity lines are complete. The second request continues from the
+        first's own tokens (prefix caching keeps that cheap). Returns the full answers."""
+        from vllm.inputs import TokensPrompt
+        from relweave.generator import ENTITY_LINE
+        texts = [o.outputs[0].text for o in first]
+        todo = [k for k, (cid, _, _) in enumerate(items) if cid not in entities_only]
+        reqs, params = [], []
+        for k in todo:
+            types = {int(m.group(1)): m.group(2) for line in texts[k].split("\n") if (m := ENTITY_LINE.match(line))}
+            ids = list(first[k].prompt_token_ids) + list(first[k].outputs[0].token_ids)
+            reqs.append(TokensPrompt(prompt_token_ids=ids))
+            params.append(self._params(items[k][1], entity_types=types,
+                                       max_tokens=max(self.max_new_tokens - len(first[k].outputs[0].token_ids), 1)))
+        outs = self.llm.generate(reqs, params, lora_request=self.lora, use_tqdm=False) if reqs else []
+        for k, o in zip(todo, outs):
+            texts[k] = texts[k] + o.outputs[0].text
+        return texts
 
     def extract_batch(self, items: list[tuple[str, str]], batch_size: int = 0,
                       entities_only: frozenset = frozenset()) -> list[ExtractionResult]:
@@ -99,13 +122,14 @@ class VllmExtractor:
                                                                    known=known))
                    for _, text, known in items]
         t0 = time.perf_counter()
-        outs = self.llm.generate(prompts, [self._params(text, cid in entities_only) for cid, text, _ in items],
+        typed = self.typed_relations
+        outs = self.llm.generate(prompts, [self._params(text, typed or cid in entities_only) for cid, text, _ in items],
                                  lora_request=self.lora,
                                  use_tqdm=False)
+        raws = self._typed_relations(items, prompts, outs, entities_only) if typed else [o.outputs[0].text for o in outs]
         per_chunk = (time.perf_counter() - t0) / max(len(items), 1)
         results = []
-        for (cid, text, _), o in zip(items, outs):
-            raw = o.outputs[0].text
+        for (cid, text, _), raw in zip(items, raws):
             results.append(finish(cid, text, drop_repeats(raw) if self.stop_on_repeat else raw, per_chunk,
                                   fmt=self.fmt, schema=self.schema))
         print(f"\nprogress: extract {len(items)}/{len(items)} chunks, {per_chunk * len(items) / 60:.1f} min", flush=True)

@@ -306,7 +306,8 @@ supplies the prompt settings and tokenizer."""
               "sequences at once", flush=True)
         common = dict(max_new_tokens=self.max_new_tokens, fmt="sentences", compact=self.compact, schema=self.schema,
                       conditioned=self.conditioned, gpu_memory_utilization=p.gpu_memory_utilization,
-                      max_model_len=p.max_model_len, max_num_seqs=p.max_num_seqs)
+                      max_model_len=p.max_model_len, max_num_seqs=p.max_num_seqs,
+                      typed_relations=self.typed_relations)
         if p.format == "4bit":
             return VllmExtractor(self.model, adapter_dir(self.generator_dir), quantization="bitsandbytes", **common)
         return VllmExtractor(str(merged), None, quantization="fp8" if p.format == "fp8" else None, **common)
