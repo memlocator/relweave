@@ -6,12 +6,16 @@
 #   bash path/to/train_domain.sh mydomain.py:MYSCHEMA
 #
 # Settings (environment): EPOCHS=3, LR=1e-4, MAX_PROBES=200 (head probes per chunk; about 80 fit an 8 GB card),
-# HEAD=1 (0 skips the head: the generator alone, about half the run time), BASE=chrullis/relweave-4b-base.
+# HEAD=1 (0 skips the head: the generator alone, about half the run time), BASE=chrullis/relweave-4b-base,
+# ENGINE=transformers (vllm: generation on vLLM, several times faster), RELWEAVE_GEN=relweave (the relweave command
+# that generates: with ENGINE=vllm, the one in an environment with vllm and vllm-bnb-plugin, which pin their own torch;
+# training stays in the environment with relweave[train]).
 # Writes runs/: the generator (gen/), head (head/) and entity tagger (tagger/), outputs on validation and test, scores, one log per step,
 # and runs/summary.txt with the validation scores that decide between the generator alone and the union.
 set -uo pipefail
 SCHEMA=${1:?usage: train_domain.sh module.py:NAME}
 EPOCHS=${EPOCHS:-3} LR=${LR:-1e-4} MAX_PROBES=${MAX_PROBES:-200} HEAD=${HEAD:-1} BASE=${BASE:-chrullis/relweave-4b-base}
+ENGINE=${ENGINE:-transformers} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave}
 S="--schema $SCHEMA"
 for f in gold_train/train.jsonl gold_val/test.jsonl gold_test/test.jsonl; do
   [ -s "$f" ] || { echo "missing $f (recipe-own-schema, steps 3-4)"; exit 1; }
@@ -26,7 +30,7 @@ step() { local n=$1; shift; log "step $n"; "$@" > "runs/$n.log" 2>&1; local st=$
 step train-generator relweave train-generator gold_train/train.jsonl $S --init-adapter models/base/generator \
   --lr "$LR" --epochs "$EPOCHS" --conditioned --epoch-adapters --out runs/gen || exit 1
 for s in val test; do
-  step generate-$s relweave generate gold_$s/test.jsonl $S --generator runs/gen --out runs/$s.jsonl || exit 1
+  step generate-$s "$RELWEAVE_GEN" generate gold_$s/test.jsonl $S --generator runs/gen --out runs/$s.jsonl --engine "$ENGINE" || exit 1
 done
 log "validation, generator alone:"
 relweave eval gold_val/test.jsonl runs/val.jsonl $S --by-type 2>/dev/null | tee -a runs/summary.txt
@@ -34,10 +38,10 @@ relweave eval gold_val/test.jsonl runs/val.jsonl $S --by-type 2>/dev/null | tee 
 if [ "$HEAD" = 1 ]; then
   n=$(grep -c . gold_train/train.jsonl)
   t0=$(date +%s); head -5 gold_train/train.jsonl > runs/time5.jsonl
-  relweave generate runs/time5.jsonl $S --generator runs/gen --out runs/time5_out.jsonl > /dev/null 2>&1
+  "$RELWEAVE_GEN" generate runs/time5.jsonl $S --generator runs/gen --out runs/time5_out.jsonl --engine "$ENGINE" > /dev/null 2>&1
   per=$(( ($(date +%s) - t0) / 5 ))
   log "the head needs the generator on all $n training records: about $(( per * n / 60 )) min at ${per}s per record"
-  step generate-train relweave generate gold_train/train.jsonl $S --generator runs/gen --out runs/own.jsonl || exit 1
+  step generate-train "$RELWEAVE_GEN" generate gold_train/train.jsonl $S --generator runs/gen --out runs/own.jsonl --engine "$ENGINE" || exit 1
   step train-head relweave train-head gold_train/train.jsonl $S --generator runs/gen --own-results runs/own.jsonl \
     --max-probes "$MAX_PROBES" --out runs/head || exit 1
   step train-tagger relweave train-tagger gold_train/train.jsonl $S --head runs/head --out runs/tagger || true
