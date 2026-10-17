@@ -9,14 +9,17 @@
 # HEAD=1 (0 skips the head: the generator alone, about half the run time), BASE=chrullis/relweave-4b-base,
 # ENGINE=auto (vLLM when RELWEAVE_GEN has it, else transformers; vllm forces it), RELWEAVE_GEN=relweave (the relweave command
 # that generates: with ENGINE=vllm, the one in an environment with vllm and vllm-bnb-plugin, which pin their own torch;
-# training stays in the environment with relweave[train]).
+# training stays in the environment with relweave[train]), TYPED=0 (1: validation and test generated with typed relation
+# decoding, which allows only relation types whose endpoint types fit the entities; worth it when the schema's endpoint
+# types are strict, whitepaper Section 5.13).
 # Rerunning continues where a run stopped: a step whose output exists is skipped (delete it to redo the step).
 # Writes runs/: the generator (gen/), head (head/) and entity tagger (tagger/), outputs on validation and test, scores, one log per step,
 # and runs/summary.txt with the validation scores that decide between the generator alone and the union.
 set -uo pipefail
 SCHEMA=${1:?usage: train_domain.sh module.py:NAME}
 EPOCHS=${EPOCHS:-3} LR=${LR:-1e-4} MAX_PROBES=${MAX_PROBES:-200} HEAD=${HEAD:-1} BASE=${BASE:-chrullis/relweave-4b-base}
-ENGINE=${ENGINE:-auto} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave}
+ENGINE=${ENGINE:-auto} RELWEAVE_GEN=${RELWEAVE_GEN:-relweave} TYPED=${TYPED:-0}
+GEN_OPTS=(); [ "$TYPED" = 1 ] && GEN_OPTS+=(--typed-relations)
 # training only: a fragmented GPU allocator is the usual out-of-memory on 8 GB (vLLM manages its own memory and must
 # not get this setting, so it is not exported)
 TRAIN_ENV=(PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True)
@@ -36,7 +39,7 @@ once() { local out=$1; shift; if [ -s "$out" ]; then log "step $1: done before (
 once runs/gen/adapter/adapter_config.json train-generator env "${TRAIN_ENV[@]}" relweave train-generator gold_train/train.jsonl $S --init-adapter models/base/generator \
   --lr "$LR" --epochs "$EPOCHS" --conditioned --epoch-adapters --out runs/gen || exit 1
 for s in val test; do
-  once runs/$s.jsonl generate-$s "$RELWEAVE_GEN" generate gold_$s/test.jsonl $S --generator runs/gen --out runs/$s.jsonl --engine "$ENGINE" || exit 1
+  once runs/$s.jsonl generate-$s "$RELWEAVE_GEN" generate gold_$s/test.jsonl $S --generator runs/gen --out runs/$s.jsonl --engine "$ENGINE" "${GEN_OPTS[@]}" || exit 1
 done
 log "validation, generator alone:"
 relweave eval gold_val/test.jsonl runs/val.jsonl $S --by-type 2>/dev/null | tee -a runs/summary.txt
