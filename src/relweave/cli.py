@@ -467,8 +467,11 @@ def judge_pool(out: Path = typer.Argument(..., help="pool directory"),
                labels: list[str] = typer.Argument(..., help="NAME=labels.jsonl for the gold (named gold, records with "
                                                             "text) and each system"),
                schema: str | None = typer.Option(None, help=SCHEMA_HELP + " (decoy types and the brief)"),
-               decoys: int = typer.Option(2, help="decoys per document")) -> None:
-    """Build a pool, the judging brief and the judges' task: OUT/items.jsonl, key.jsonl, brief.md, task_<judge>.md."""
+               decoys: int = typer.Option(2, help="decoys per document"),
+               aliases_from: str = typer.Option("gold,passb", help="labellers whose entity names say which names are "
+                                                "one entity (aliases.jsonl; names missing from LABELS are skipped)")) -> None:
+    """Build a pool, the judging brief and the judges' task: OUT/items.jsonl, key.jsonl, aliases.jsonl, brief.md,
+    task_<judge>.md."""
     from relweave import judge
     s = _schema(schema)
     pairs = {}
@@ -477,7 +480,7 @@ def judge_pool(out: Path = typer.Argument(..., help="pool directory"),
             raise typer.BadParameter(f"{x}: expected NAME=path")
         n, p = x.split("=", 1)
         pairs[n] = p
-    docs, claims = judge.items(out, pairs, s, decoys=decoys)
+    docs, claims = judge.items(out, pairs, s, decoys=decoys, alias_sources=_judges(aliases_from))
     if s is not None:
         (out / "brief.md").write_text(judge.brief(s))
     for j in ("a", "b"):
@@ -523,7 +526,8 @@ def judge_score(out: Path = typer.Argument(..., help="pool directory"),
     from relweave import judge
     js = _judges(judges)
     r = judge.score(out, js)
-    typer.echo(f"pool: {r['claims']} claims, {r['true']} judged true by {' and '.join(js)}")
+    unit = "facts (claims naming one fact differently counted once, aliases.jsonl)" if r["facts"] else "claims"
+    typer.echo(f"pool: {r['claims']} {unit}, {r['true']} judged true by {' and '.join(js)}")
     for n, v in r["sources"].items():
         typer.echo(f"{n:12} wrote {v['wrote']:4}  true {v['true']:4}  precision {v['precision']:.2f}  pooled recall "
                    f"{v['recall']:.2f}  F1 {v['f1']:.3f}  (95% {v['ci'][0]:.3f}-{v['ci'][1]:.3f}, document bootstrap)")
@@ -552,6 +556,16 @@ def judge_add(out: Path = typer.Argument(..., help="pool directory"),
     n, p = label.split("=", 1)
     typer.echo(f"{n}: {judge.add(out, n, p)} new claims -> {out}/items_add.jsonl; judge them into "
                f"verdicts_add_<judge>.jsonl, then: relweave judge merge {out}")
+
+
+@judge_app.command("aliases")
+def judge_aliases(out: Path = typer.Argument(..., help="pool directory"),
+                  labels: list[str] = typer.Argument(..., help="NAME=labels.jsonl of each labeller (not model outputs)")) -> None:
+    """Write OUT/aliases.jsonl, the names each labelled entity goes by, for a pool built without it: `score` and
+    `pair` then count a fact once whichever name a source used (a case by its caption or its docket number)."""
+    from relweave import judge
+    n = judge.aliases(out, dict(x.split("=", 1) for x in labels))
+    typer.echo(f"{n} groups of names -> {out}/aliases.jsonl")
 
 
 @judge_app.command("merge")

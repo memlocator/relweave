@@ -85,6 +85,27 @@ def test_sentences_grammar_forbids_going_back_or_repeating_a_sentence():
         assert not xgr.testing._is_grammar_accept_string(g, bad)
 
 
+WRAPPED = "Ann Lee is the chief executive of SOUTH DAKOTA DIVISION OF\n      CRIMINAL INVESTIGATION in Pierre."
+
+
+def test_a_wrapped_name_is_written_on_one_line_and_found_across_the_wrap():
+    from relweave.formats import find_all, resolve
+    name = "SOUTH DAKOTA DIVISION OF\n      CRIMINAL INVESTIGATION"  # as a labeller copies it from the caption
+    out = ExtractionOutput.model_validate({
+        "entities": [{"id": "e1", "type": "Person", "name": "Ann Lee", "mentions": ["Ann Lee"]},
+                     {"id": "e2", "type": "Org", "name": name, "mentions": [name]}],
+        "relations": [{"type": "EXECUTIVE_OF", "source": "e1", "target": "e2", "evidence": WRAPPED}]})
+    encoded = SENTS.encode(out, WRAPPED)
+    assert "E2 Org: SOUTH DAKOTA DIVISION OF CRIMINAL INVESTIGATION" in encoded.splitlines()
+    assert find_all(WRAPPED, "SOUTH DAKOTA DIVISION OF CRIMINAL INVESTIGATION") == [(34, 87)]
+    assert find_all(WRAPPED, "DIVISION OF CRIMINAL") and not find_all(WRAPPED, "DIVISION OF CRIM")
+    decoded, err = SENTS.decode(encoded, WRAPPED)
+    assert err is None
+    cleaned, stats = resolve(WRAPPED, ExtractionOutput.model_validate(decoded))
+    assert [e.mentions for e in cleaned.entities][1] == ["SOUTH DAKOTA DIVISION OF CRIMINAL INVESTIGATION"]
+    assert len(cleaned.relations) == 1 and stats["unresolved_mentions"] == 0
+
+
 def test_display_name_prefers_proper_names_over_descriptions():
     from relweave.formats import display_name
     assert display_name(["the company name", "Tetra Pak", "it"]) == "Tetra Pak"

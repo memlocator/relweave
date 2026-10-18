@@ -12,6 +12,8 @@ Files of a pool directory:
   items.jsonl             per document: text and numbered claims, sources hidden (what the judges see)
   key.jsonl               per claim: its sources and, for a decoy, the decoy kind
   verdicts_<judge>.jsonl  per document: {"id", "verdicts": [{"n", "verdict": "true"|"false", "quote"}]}
+  aliases.jsonl           per document: groups of names the labellers give one entity; with it, claims that name one
+                          fact differently (a case by its caption and by its docket number) are scored as one fact
 Labels files (the gold, each system): one object per document or chunk, {"id", "entities": [{"name", "type",
 "mentions"}], "relations": [{"source", "type", "target"}]} with entities named; the gold's records carry "text".
 """
@@ -69,7 +71,80 @@ def judge_prompt(brief_path: str | Path, items_path: str | Path, verdicts_path: 
 
 
 def key(s: str) -> str:
-    return re.sub(r"[^\w ]", "", s.lower().replace("’", "'")).strip()
+    """A name compared without case, punctuation or line breaks (a caption wraps a name over two lines)."""
+    return " ".join(re.sub(r"[^\w\s]", "", s.lower().replace("’", "'")).split())
+
+
+def _name_like(m: str) -> bool:
+    return m[:1].isupper() or m[:1].isdigit()  # "Smith", "No. 04-25-00453-CV"; not "the court", "she"
+
+
+def aliases(out: str | Path, labels: dict[str, str | Path]) -> int:
+    """Write OUT/aliases.jsonl from the labellers' files (LABELS): per document, the groups of names one entity has, so
+    a fact is scored once whichever name a source used (a case by its caption or its docket number, "BIA" or "Board of
+    Immigration Appeals"). Only names (mentions starting with a capital or a digit) that every labeller gives the same
+    type join a group, so a person and the case named after them stay apart. Model outputs are not used: a model that
+    groups two people as one entity would merge two facts. Returns the number of groups with more than one name."""
+    out = Path(out)
+    src = [{d["id"]: d for d in _read(p)} for p in labels.values()]
+    n_groups = 0
+    with open(out / "aliases.jsonl", "w") as w:
+        for it in _read(out / "items.jsonl"):
+            i = it["id"]
+            ents = [e for s in src for e in s.get(i, {}).get("entities", [])]
+            types = collections.defaultdict(set)
+            for e in ents:
+                for m in [e["name"], *e.get("mentions", [])]:
+                    types[key(m)].add(e.get("type"))
+            parent = {}
+
+            def find(x):
+                while parent.setdefault(x, x) != x:
+                    x = parent[x]
+                return x
+            for e in ents:
+                names = [key(m) for m in dict.fromkeys([e["name"], *e.get("mentions", [])])
+                         if (m == e["name"] or _name_like(m)) and types[key(m)] == {e.get("type")} and key(m)]
+                for m in names[1:]:
+                    parent[find(m)] = find(names[0])
+            groups = collections.defaultdict(list)
+            for x in parent:
+                groups[find(x)].append(x)
+            groups = [sorted(g) for g in groups.values() if len(g) > 1]
+            n_groups += len(groups)
+            w.write(json.dumps({"id": i, "groups": groups}, ensure_ascii=False) + "\n")
+    return n_groups
+
+
+def _facts(out, keyed, true):
+    """Claims with their relation type; with OUT/aliases.jsonl, the claims that name one fact differently folded into
+    one (its sources are all of theirs; true when one of them is judged true). Decoys stay as they are."""
+    path = Path(out) / "aliases.jsonl"
+    can = {}
+    if path.exists():
+        for d in _read(path):
+            for g in d["groups"]:
+                for n in g:
+                    can[(d["id"], n)] = g[0]
+    facts, ftrue, index = {}, set(), {}
+    for d in _read(Path(out) / "items.jsonl"):
+        i = d["id"]
+        for c in d["claims"]:
+            k = (i, c["n"])
+            kc = keyed[k]
+            if not path.exists() or kc["decoy"]:
+                facts[k] = {**kc, "type": c["type"]}
+                if k in true:
+                    ftrue.add(k)
+                continue
+            f = (i, can.get((i, key(c["source"])), key(c["source"])), c["type"],
+                 can.get((i, key(c["target"])), key(c["target"])))
+            fk = index.setdefault(f, (i, f"f{len(index)}"))
+            row = facts.setdefault(fk, {"sources": [], "decoy": "", "type": c["type"]})
+            row["sources"] = sorted(set(row["sources"]) | set(kc["sources"]))
+            if k in true:
+                ftrue.add(fk)
+    return facts, ftrue
 
 
 def canon(sources):
@@ -114,9 +189,10 @@ def neighbour_types(schema: Schema) -> dict[str, list[str]]:
 
 def items(out: str | Path, labels: dict[str, str | Path], schema: Schema | None = None, gold: str | None = None,
           decoys: int = 2, seed: int = 1012, swap: dict[str, str] | None = None, directed: set[str] | None = None,
-          world: list[tuple[str, str, str]] = ()) -> tuple[int, int]:
+          world: list[tuple[str, str, str]] = (), alias_sources: list[str] | None = None) -> tuple[int, int]:
     """Build a pool from labels files ({source name: path}); GOLD names the source whose records carry the text and
-    whose ids define the documents (default: "gold", else the first). Per document DECOYS decoys of different kinds:
+    whose ids define the documents (default: "gold", else the first). ALIAS_SOURCES: the labellers whose entity names
+    make aliases.jsonl (default: the gold). Per document DECOYS decoys of different kinds:
     direction (types not symmetric), entity (another entity of the target's type), type (SWAP, or a neighbouring type of
     SCHEMA). WORLD: (source, type, target) facts true in the world, planted where the source entity appears but the text
     does not state them. Returns (documents, claims)."""
@@ -167,6 +243,7 @@ def items(out: str | Path, labels: dict[str, str | Path], schema: Schema | None 
                 ensure_ascii=False) + "\n")
             wk.write(json.dumps({"id": i, "claims": [{"n": k, "sources": s, "decoy": dk}
                                                        for k, (_, s, dk) in enumerate(claims)]}) + "\n")
+    aliases(out, {n: labels[n] for n in (alias_sources or [gold]) if n in labels})
     return len(src[gold]), n_claims
 
 
@@ -234,13 +311,14 @@ def _sample_f1(per, sample, n):
 def score(out, judges, boot: int = 2000) -> dict:
     """Per source: claims written, judged true, precision, pooled recall, F1 and its 95% document-bootstrap interval."""
     keyed, verdicts, _ = load(out, judges)
-    true = judged_true(keyed, verdicts, judges)
+    keyed, true = _facts(out, keyed, judged_true(keyed, verdicts, judges))
     names = sorted({s for c in keyed.values() for s in c["sources"]})
     per = _per_doc(keyed, true, names)
     docs = sorted({i for i, _ in keyed})
     rng = random.Random(0)
     samples = [rng.choices(docs, k=len(docs)) for _ in range(boot)]
-    res = {"claims": sum(1 for c in keyed.values() if not c["decoy"]), "true": len(true), "sources": {}}
+    res = {"claims": sum(1 for c in keyed.values() if not c["decoy"]), "true": len(true), "sources": {},
+           "facts": (Path(out) / "aliases.jsonl").exists()}
     for n in names:
         wrote = sum(per[i][n][0] for i in docs)
         tp = sum(per[i][n][1] for i in docs)
@@ -254,8 +332,8 @@ def by_type(out, judges, without: str | None = None) -> dict:
     """Per relation type and source: (F1, precision, pooled recall, judged-true count), plus "without <TYPE>" when one
     type dominates the pool. A headline F1 carried by one frequent, easy type hides the rest."""
     keyed, verdicts, _ = load(out, judges)
-    typ = {(d["id"], c["n"]): c["type"] for d in _read(Path(out) / "items.jsonl") for c in d["claims"]}
-    true = judged_true(keyed, verdicts, judges)
+    keyed, true = _facts(out, keyed, judged_true(keyed, verdicts, judges))
+    typ = {k: c["type"] for k, c in keyed.items()}
     names = sorted({s for c in keyed.values() for s in c["sources"]})
     groups = [(t, lambda k, t=t: typ[k] == t) for t in sorted({typ[k] for k in true})]
     if without:
@@ -275,7 +353,7 @@ def by_type(out, judges, without: str | None = None) -> dict:
 def pair(out, a: str, b: str, judges, boot: int = 4000) -> tuple[float, float, float, int]:
     """Paired document-bootstrap difference of judged F1, B minus A, both in one pool: (difference, low, high, docs)."""
     keyed, verdicts, _ = load(out, judges)
-    true = judged_true(keyed, verdicts, judges)
+    keyed, true = _facts(out, keyed, judged_true(keyed, verdicts, judges))
     per = _per_doc(keyed, true, [a, b])
     docs = sorted({i for i, _ in keyed})
     rng = random.Random(1)

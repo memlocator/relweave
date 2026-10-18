@@ -346,7 +346,7 @@ class LineFormat(SchemaBound):
         if keep_numbers:
             number = {e.id: int(e.id[1:]) for e in out.entities}
             out = out.model_copy(update={"entities": sorted(out.entities, key=lambda e: number[e.id])})
-        lines = [f"E{number[e.id]} {str(e.type)}: " + " | ".join(e.mentions) for e in out.entities]
+        lines = [entity_line(number[e.id], str(e.type), e.mentions) for e in out.entities]
         for r in out.relations:
             line = (f"R {r.type} E{number[r.source]} E{number[r.target]} {r.modality.value} "
                     f"S{self._sentence_of(text, r.evidence)}")
@@ -458,7 +458,7 @@ class SentenceFormat(LineFormat):
         if keep_numbers:
             number = {e.id: int(e.id[1:]) for e in out.entities}
             out = out.model_copy(update={"entities": sorted(out.entities, key=lambda e: number[e.id])})
-        lines = [f"E{number[e.id]} {str(e.type)}: " + " | ".join(e.mentions) for e in out.entities]
+        lines = [entity_line(number[e.id], str(e.type), e.mentions) for e in out.entities]
         by_sentence: dict[int, list[tuple]] = {}
         for r in out.relations:
             line = f"R {r.type} E{number[r.source]} E{number[r.target]} {r.modality.value}"
@@ -657,26 +657,47 @@ def parse_output(raw: str, repair: bool = False, fmt: str = "json",
     return out, None, dropped, repaired
 
 
+def entity_line(number: int, node_type: str, surfaces) -> str:
+    """One answer line, 'E<n> <Type>: a | b'. A surface copied from a wrapped caption holds a line break; written as
+    is it would split the line and teach a truncated name plus a stray line, so its whitespace is collapsed
+    (find_all matches it back across the wrap)."""
+    return f"E{number} {node_type}: " + " | ".join(" ".join(s.split()) for s in surfaces)
+
+
 def find_all(text: str, needle: str) -> list[tuple[int, int]]:
     """All non-overlapping whole-word occurrences of needle in text.
 
     An occurrence counts only if it is not glued to letters or digits on either side,
     so "he" does not match inside "the" and "her" not inside "father". Edges of the
     needle that are themselves punctuation ("H&M", "(publ)") need no boundary.
+    Whitespace in the needle matches any run of whitespace in the text, so a name written on one line is
+    found where the text wraps it.
     """
     out = []
-    if not needle:
+    words = needle.split()
+    if not words:
         return out
-    pos = text.find(needle)
-    while pos != -1:
-        end = pos + len(needle)
-        left_ok = not needle[0].isalnum() or pos == 0 or not text[pos - 1].isalnum()
-        right_ok = not needle[-1].isalnum() or end == len(text) or not text[end].isalnum()
+    if len(words) == 1 and words[0] == needle:
+        def search(pos):
+            at = text.find(needle, pos)
+            return (at, at + len(needle)) if at != -1 else None
+    else:
+        pattern = re.compile(r"\s+".join(map(re.escape, words)))
+
+        def search(pos):
+            m = pattern.search(text, pos)
+            return m.span() if m else None
+    first, last = words[0][0], words[-1][-1]
+    hit = search(0)
+    while hit:
+        pos, end = hit
+        left_ok = not first.isalnum() or pos == 0 or not text[pos - 1].isalnum()
+        right_ok = not last.isalnum() or end == len(text) or not text[end].isalnum()
         if left_ok and right_ok:
             out.append((pos, end))
-            pos = text.find(needle, end)
+            hit = search(end)
         else:
-            pos = text.find(needle, pos + 1)
+            hit = search(pos + 1)
     return out
 
 

@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from relweave.formats import entity_line
+
 DEFAULT_WEIGHTS = "chrullis/relweave-4b-zeroshot"
 DEFAULT_THRESHOLD = 0.6  # on density-adjusted scores
 DENSITY_ALPHA = 0.5
@@ -36,7 +38,7 @@ def question(source: str, target: str, definition: str) -> str:
 
 def entity_block(entities: list[tuple[str, list[str]]]) -> str:
     """'E1 Org: Acme | the company' lines for (type, mentions) in order."""
-    return "".join(f"E{k} {t}: " + " | ".join(m) + "\n" for k, (t, m) in enumerate(entities, 1))
+    return "".join(entity_line(k, t, m) + "\n" for k, (t, m) in enumerate(entities, 1))
 
 
 def pack(prefix: list[int], questions: list[list[int]]):

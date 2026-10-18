@@ -202,6 +202,7 @@ class EntityTagger:
     def augment(self, model, tok, text: str, result):
         """Add the tagged entities the generator did not list to its result (its entity lines and its output), so the
         relation head scores their pairs too. Returns the result unchanged when nothing is missing."""
+        from relweave.formats import entity_line
         from relweave.schema.output import Entity
         out = result.output
         known = {m.lower() for e in out.entities for m in [e.name, *e.mentions]}
@@ -219,7 +220,7 @@ class EntityTagger:
         lines = []
         for k, (surface, typ) in enumerate(extra, n + 1):
             ents.append(Entity.model_construct(id=f"e{k}", type=typ, name=surface, attributes={}, mentions=[surface]))
-            lines.append(f"E{k} {typ}: {surface}")
+            lines.append(entity_line(k, typ, [surface]))
         result.output = out.model_copy(update={"entities": ents})
         result.raw = result.raw.rstrip("\n") + "\n" + "\n".join(lines) + "\n"
         return result

@@ -108,6 +108,43 @@ def test_add_and_merge_keep_earlier_verdicts(tmp_path):
     assert s["true"] == 3 and s["sources"]["new"]["true"] == 1 and s["sources"]["new"]["wrote"] == 2
 
 
+CASE_TEXT = "04-25-00453-CV\nMP II, Inc., Appellant\nThe appeal is from the County Court at Law No. 3."
+
+
+def test_a_fact_named_two_ways_is_scored_once(tmp_path):
+    # the labeller names the case by a caption and lists its docket number; a system added later names it by the docket
+    # number, and `add` sees only the pool's claim names, not the labeller's mentions
+    gold = write(tmp_path / "gold.jsonl", [{"id": "d1", "text": CASE_TEXT,
+        "entities": [ent("MP II, Inc. v. Kollars", "Case", "04-25-00453-CV"), ent("MP II, Inc.", "Org"),
+                     ent("County Court at\nLaw No. 3", "Court")],
+        "relations": [{"source": "MP II, Inc. v. Kollars", "type": "PARTY_IN", "target": "MP II, Inc."}]}])
+    sys_ = write(tmp_path / "sys.jsonl", [{"id": "d1",
+        "entities": [ent("04-25-00453-CV", "Case"), ent("MP II, Inc.", "Org")],
+        "relations": [{"source": "04-25-00453-CV", "type": "PARTY_IN", "target": "MP II, Inc."}]}])
+    out = tmp_path / "pool"
+    judge.items(out, {"gold": gold}, decoys=0)
+    assert judge.add(out, "sys", sys_) == 1
+    true = {("MP II, Inc. v. Kollars", "PARTY_IN", "MP II, Inc."): "MP II, Inc., Appellant",
+            ("04-25-00453-CV", "PARTY_IN", "MP II, Inc."): "MP II, Inc., Appellant"}
+    for j in ("a", "b"):
+        verdicts(out, j, true)
+    s = judge.score(out, ["a", "b"], boot=20)
+    assert s["facts"] and s["true"] == 1
+    assert s["sources"]["sys"]["recall"] == 1.0 and s["sources"]["gold"]["recall"] == 1.0
+    (out / "aliases.jsonl").unlink()  # without aliases the one fact is two claims, each source missing one
+    s = judge.score(out, ["a", "b"], boot=20)
+    assert not s["facts"] and s["true"] == 2 and s["sources"]["sys"]["recall"] == 0.5
+
+
+def test_aliases_keep_entities_of_different_types_apart(tmp_path):
+    gold = write(tmp_path / "gold.jsonl", [{"id": "d1", "text": "State v. Smith. Smith appeals.",
+        "entities": [ent("State v. Smith", "Case", "Smith"), ent("Smith", "Person")], "relations": []}])
+    out = tmp_path / "pool"
+    judge.items(out, {"gold": gold}, decoys=0)
+    assert json.loads(open(out / "aliases.jsonl").read())["groups"] == []
+    assert judge.key("County Court at\n   Law No. 3") == judge.key("County Court at Law No. 3")
+
+
 def test_brief_renders_schema_definitions():
     b = judge.brief(BUSINESS)
     assert "EXECUTIVE_OF" in b and "## Rules" in b and "verbatim" in b

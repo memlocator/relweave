@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from relweave.formats import entity_line
+
 MAX_KNOWN = 40  # entities in the list; the document's first entity always stays, then the most recently mentioned
 MAX_SURFACES = 4  # surfaces shown per entity, names first
 
@@ -39,5 +41,5 @@ def known_lines(known: list[Known], cap: int = MAX_KNOWN) -> str:
     for k in sorted([first] + rest, key=lambda k: k.number):
         names = [s for s in k.surfaces if _is_name(s)]
         others = [s for s in k.surfaces if s not in names]
-        out.append(f"E{k.number} {k.type}: " + " | ".join(list(dict.fromkeys(names + others))[:MAX_SURFACES]))
+        out.append(entity_line(k.number, k.type, list(dict.fromkeys(names + others))[:MAX_SURFACES]))
     return "\n".join(out)
