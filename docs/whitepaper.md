@@ -215,13 +215,16 @@ On the fresh test set (13 documents, one labelling pass) the system before the l
 - **Model size.** Qwen3-4B over Qwen3-1.7B: +0.05 to +0.07 at equal data, about +0.04 for the full system; most of the
   4B's advantage is in the entity lists rather than in the relation decisions.
   With the full recipe the 1.7B system scores 0.732 against 0.780 over 377 held-out chunks (-0.048, 95% interval
-  -0.067 to -0.030); it is published as relweave-1.7b-base. On long unseen documents the gap is wider. Judged on the
-  26 unseen documents (one pool, facts counted once, transformers engine), the 1.7B scores 0.508 against 0.631
-  without the entity tagger (paired -0.123, 95% -0.179 to -0.074) and 0.556 against 0.639 with a 1.7B tagger trained
-  by the same command as the 4B's (paired -0.084, -0.151 to -0.021). The tagger helps the 1.7B more than the 4B
-  (+0.048, +0.001 to +0.105). On the list tests the 1.7B tagger finds 99-100% of the names, yet relations trail on
-  written lists (0.654 against 0.851); lead-sentence lists are level (0.921 against 0.922), the annual report close
-  (0.700 against 0.744). The 1.7B is the light option, not a substitute for the 4B on long or list-heavy text.
+  -0.067 to -0.030); it is published as relweave-1.7b-base. On long unseen documents the published 1.7B falls further behind, and
+  most of that was its head, which had skipped two of the 4B head's training passes (its LoRA grew from an older
+  generator, and it had no pass on the verify pool alone). Judged on the 26 unseen documents (one pool, facts counted
+  once, transformers engine, with an entity tagger trained on each head's states by the same command as the 4B's): the
+  published 1.7B head 0.515, the 1.7B head retrained with the 4B's full recipe 0.574 (paired +0.059, 95% -0.002 to
+  +0.124), the 4B 0.597 (1.7B - 4B -0.023, -0.099 to +0.053). On 105 held-out business chunks the retrained head does
+  not differ (0.716 against 0.721): the extra passes pay on long, unfamiliar text. Loosening the published head's margin
+  to 0.0 instead adds +0.020 (-0.002 to +0.043). On the list tests the 1.7B (published head) finds 99-100% of the names
+  with its tagger, yet relations trail on written lists (0.654 against 0.851); lead-sentence lists are level (0.921
+  against 0.922), the annual report close (0.700 against 0.744).
 - **Serving.** An adapter trained on the 4-bit base learns corrections for its rounding: on the original full-precision
   base it loses about 0.03 generator F1. Dequantizing the 4-bit base and merging the adapter reproduces the trained
   model as a plain bf16 model, which vLLM serves at about 9x (4B, fp8 weights) to 16x (1.7B) the throughput of the
