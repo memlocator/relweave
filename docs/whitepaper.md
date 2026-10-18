@@ -873,7 +873,12 @@ ended mid-name and the rest became a stray line: 162 of the 1,803 training recor
 counsel blocks, taught the model truncated names. On test the model wrote exactly those fragments and, on one such
 chunk, stopped its entity list at 10 of 20 names and filled the gap with a cross product of REPRESENTS lines; that
 chunk holds 14 of the 23 REPRESENTS relations it missed against the labeller. relweave 0.4.3 writes names with their
-whitespace collapsed and finds them across the wrap; the court model has not been retrained since. Of the other
+whitespace collapsed and finds them across the wrap. Continuing the round-2 generator one epoch on the corrected
+targets (local 8 GB card, 23 min) and retraining the head on its outputs fixed that chunk (21 entities, 7 REPRESENTS
+lines instead of 37) and lifted generator entity F1 (validation 0.788 to 0.823, test 0.735 to 0.767), but not
+relations: union relation F1 at the validation-chosen cut -2 was 0.795 on validation (round 2: 0.786) and 0.679 on
+test against the Opus labels (round 2: 0.712). Both changes are inside the noise of 43 and 59 chunks, so the corrected
+model was not judged; the wrapped names explain one chunk, not the gap to the pass mark. Of the other
 training sets only the government reports had such names (7 of 540 records); the business data of the shared base
 had none.
 
