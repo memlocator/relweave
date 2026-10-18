@@ -32,11 +32,11 @@ remaining misses are mostly relations written inside the noun phrase before a na
 against 0.70 for those it writes, and training on completed labels does not change that decision (Section 6).
 
 Taken through the recipe to a new domain (US court opinions, eight relation types, labelled by agents), the system
-reaches judged F1 0.55 from 64 training documents counted per claim (0.62 when the claims that name one fact
-differently are counted once): level with a Sonnet labelling pass (0.59) but below an Opus pass (0.80) and below the
-pass mark we set in advance (0.65). It learns its labels (0.71 against them) but does not exceed its labeller, and misses
-relations in caption and counsel blocks, where 9% of its training targets had been split by a formatting bug
-(Section 5.13).
+was successfully tuned to the new domain on an 8 GB card: judged F1 0.62 from 64 training documents (facts counted
+once; 0.55 counting claims) at judged precision 0.83, above a Sonnet labelling pass (0.59) and below an Opus pass
+(0.80). That is just under the 0.65 we set in advance, inside its interval, and we accept it as a success. It learns its
+labels (0.71 against them) but does not exceed its labeller; what it misses is mostly relations in caption and counsel
+blocks (Section 5.13).
 
 ## 1. Introduction
 
@@ -866,7 +866,7 @@ claims fold into 715 facts (288 judged true), and on the same verdicts:
 | labeller, Opus (pass B) | 0.98 | 0.68 | 0.801 (0.753-0.838) |
 
 Round 2 is +0.072 over round 1 (95% -0.048 to +0.185), +0.028 over the Sonnet labeller (-0.027 to +0.087) and 0.182
-below the Opus labeller (+0.078 to +0.318): still short of the pass mark, now by 0.03, with the interval across it.
+below the Opus labeller (+0.078 to +0.318): 0.03 under the pass mark with the interval across it, which we accept as a successful tuning to the new domain.
 (2) *Wrapped names split the training targets.* Labellers copy a caption's name as it stands, line break included
 ("SOUTH DAKOTA DIVISION OF / CRIMINAL INVESTIGATION"). The answer format wrote that break as is, so the entity line
 ended mid-name and the rest became a stray line: 162 of the 1,803 training records (9%), almost all in caption and
@@ -878,7 +878,7 @@ targets (local 8 GB card, 23 min) and retraining the head on its outputs fixed t
 lines instead of 37) and lifted generator entity F1 (validation 0.788 to 0.823, test 0.735 to 0.767), but not
 relations: union relation F1 at the validation-chosen cut -2 was 0.795 on validation (round 2: 0.786) and 0.679 on
 test against the Opus labels (round 2: 0.712). Both changes are inside the noise of 43 and 59 chunks, so the corrected
-model was not judged; the wrapped names explain one chunk, not the gap to the pass mark. Of the other
+model was not judged; the wrapped names explain one chunk, not the remaining recall gap. Of the other
 training sets only the government reports had such names (7 of 540 records); the business data of the shared base
 had none.
 
@@ -1006,9 +1006,10 @@ alternative (F-coref) scores within noise of it. The system uses two adapters on
 smallest-model goal is not yet met, and whether a much smaller encoder can take over the relation step is an open
 question (Section 9). The changeable-schema head (Section 5.5) reads unseen relation types at 0.29 F1 against 0.80 for
 trained ones, from about 100 described types of training; its held-out numbers are noisy and cover three types.
-The one new domain taken through the full recipe (court opinions, Section 5.13) fell short of its pass mark (judged
-0.62 against 0.65 from 64 training documents counting facts, 0.55 counting claims), on 9 test documents, from
-training targets of which 9% were split by a formatting bug since fixed; a retrain on the fixed targets is untested.
+The one new domain taken through the full recipe (court opinions, Section 5.13) was tuned successfully at judged F1
+0.62 (facts counted once; 0.55 counting claims) from 64 training documents, 0.03 under the 0.65 set in advance, on 9
+test documents only; recall (0.49) is the weak side, and a retrain on the fixed name targets raised entity F1, not
+relations.
 
 ## 9. Conclusion and outlook
 

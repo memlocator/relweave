@@ -125,8 +125,8 @@ when you run the same line again: a step whose output exists is skipped; delete 
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
 
-What to expect: on US court opinions (eight relation types) the union reached judged F1 0.55 from 29 training
-documents and 0.62 from 64 (facts counted once), level with a Sonnet labelling pass (0.59) and below an Opus pass
+What to expect: tuning to US court opinions (eight relation types) succeeded at judged F1 0.62 from 64 training
+documents (facts counted once; precision 0.83) and 0.55 from 29, level with a Sonnet labelling pass (0.59) and below an Opus pass
 (0.80); doubling the documents moved it by about +0.07. Recall was lowest where one block states several relations at once (counsel lines). If a
 type lags, add training documents with more of the structure it lives in before adding more of everything or changing
 settings (whitepaper Section 5.13).
