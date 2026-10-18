@@ -215,7 +215,13 @@ On the fresh test set (13 documents, one labelling pass) the system before the l
 - **Model size.** Qwen3-4B over Qwen3-1.7B: +0.05 to +0.07 at equal data, about +0.04 for the full system; most of the
   4B's advantage is in the entity lists rather than in the relation decisions.
   With the full recipe the 1.7B system scores 0.732 against 0.780 over 377 held-out chunks (-0.048, 95% interval
-  -0.067 to -0.030); it is published as relweave-1.7b-base.
+  -0.067 to -0.030); it is published as relweave-1.7b-base. On long unseen documents the gap is wider. Judged on the
+  26 unseen documents (one pool, facts counted once, transformers engine), the 1.7B scores 0.508 against 0.631
+  without the entity tagger (paired -0.123, 95% -0.179 to -0.074) and 0.556 against 0.639 with a 1.7B tagger trained
+  by the same command as the 4B's (paired -0.084, -0.151 to -0.021). The tagger helps the 1.7B more than the 4B
+  (+0.048, +0.001 to +0.105). On the list tests the 1.7B tagger finds 99-100% of the names, yet relations trail on
+  written lists (0.654 against 0.851); lead-sentence lists are level (0.921 against 0.922), the annual report close
+  (0.700 against 0.744). The 1.7B is the light option, not a substitute for the 4B on long or list-heavy text.
 - **Serving.** An adapter trained on the 4-bit base learns corrections for its rounding: on the original full-precision
   base it loses about 0.03 generator F1. Dequantizing the 4-bit base and merging the adapter reproduces the trained
   model as a plain bf16 model, which vLLM serves at about 9x (4B, fp8 weights) to 16x (1.7B) the throughput of the
