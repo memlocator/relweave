@@ -57,10 +57,11 @@ exit code; a single chunk that fails becomes a warning in the graph and the docu
 | model | system F1 (validation / test) | generator on vLLM, 8 GB GPU | generator, transformers backend | vLLM weights in memory |
 |---|---|---|---|---|
 | [relweave-4b-base](https://huggingface.co/chrullis/relweave-4b-base) | 0.781 / 0.783 | about 42 chunks/min (fp8) | about 4.5 chunks/min | 4.2 GB (fp8) |
-| [relweave-1.7b-base](https://huggingface.co/chrullis/relweave-1.7b-base) | 0.737 / 0.722 | about 96 chunks/min (bf16) | about 6 chunks/min | 3.3 GB (bf16) |
+| [relweave-1.7b-base](https://huggingface.co/chrullis/relweave-1.7b-base) | 0.733 / 0.716 | about 96 chunks/min (bf16) | about 6 chunks/min | 3.3 GB (bf16) |
 
-Speeds on one RTX 3070 Ti (8 GB), 64 test chunks of about 200 words. Over 377 held-out chunks the 1.7B scores 0.048
-below the 4B (95% interval 0.030 to 0.067).
+Speeds on one RTX 3070 Ti (8 GB), 64 test chunks of about 200 words. On 26 unseen long documents (judged,
+facts counted once) the 1.7B scores 0.574 against the 4B's 0.597 (paired -0.023, 95% -0.099 to +0.053), both with
+their entity taggers; whitepaper Section 4.
 
 Each model repository holds the generator twice: as a LoRA adapter in `generator/` (used by relweave's default
 transformers backend on the 4-bit base) and, at the root, merged into the dequantized 4-bit base as one plain bf16
