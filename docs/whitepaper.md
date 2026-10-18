@@ -32,9 +32,11 @@ remaining misses are mostly relations written inside the noun phrase before a na
 against 0.70 for those it writes, and training on completed labels does not change that decision (Section 6).
 
 Taken through the recipe to a new domain (US court opinions, eight relation types, labelled by agents), the system
-reaches judged F1 0.50 from 29 training documents and 0.55 from 64: level with a Sonnet labelling pass (0.52-0.54) but
-below an Opus pass (0.72-0.74) and below the pass mark we set in advance (0.65). It learns its labels (0.71 against
-them) but does not exceed its labeller, and misses relations in dense counsel and caption blocks (Section 5.13).
+reaches judged F1 0.55 from 64 training documents counted per claim (0.62 when the claims that name one fact
+differently are counted once): level with a Sonnet labelling pass (0.59) but below an Opus pass (0.80) and below the
+pass mark we set in advance (0.65). It learns its labels (0.71 against them) but does not exceed its labeller, and misses
+relations in caption and counsel blocks, where 9% of its training targets had been split by a formatting bug
+(Section 5.13).
 
 ## 1. Introduction
 
@@ -847,6 +849,34 @@ Reaching the pass mark through the weak blocks alone therefore needs the model t
 types, not to improve on one. A labeller that misses 43% of the pool also caps a model trained on its labels: copying
 it perfectly would give about 0.68 at the model's precision.
 
+**Two measurement and format faults, found after round 2.** (1) *One fact, two claims.* The pool keys a claim by
+the names it uses. A labeller names a case by its caption and lists the docket number as a mention; the model names it
+by the docket number. Building the pool merges such names, but `judge add`, which brought in every later system, sees
+only the claim names already in the pool, not the labellers' mentions, so the same fact became two claims: one true
+claim for the model, and one labelled fact it "missed". The pool now keeps the labellers' name groups
+(`aliases.jsonl`: names a labeller lists for one entity, starting with a capital or a digit, with one type in every
+labelling) and scores a fact once whichever name a source used. Without them every score is unchanged. With them, 786
+claims fold into 715 facts (288 judged true), and on the same verdicts:
+
+| system (715 facts) | judged precision | pooled recall | judged F1 (95%) |
+|---|---|---|---|
+| round 1: union, typed generator, 29 documents | 0.77 | 0.42 | 0.547 (0.448-0.651) |
+| round 2: union, typed generator, 64 documents | 0.83 | 0.49 | **0.619** (0.465-0.729) |
+| labeller, Sonnet (pass A) | 0.99 | 0.42 | 0.590 (0.459-0.694) |
+| labeller, Opus (pass B) | 0.98 | 0.68 | 0.801 (0.753-0.838) |
+
+Round 2 is +0.072 over round 1 (95% -0.048 to +0.185), +0.028 over the Sonnet labeller (-0.027 to +0.087) and 0.182
+below the Opus labeller (+0.078 to +0.318): still short of the pass mark, now by 0.03, with the interval across it.
+(2) *Wrapped names split the training targets.* Labellers copy a caption's name as it stands, line break included
+("SOUTH DAKOTA DIVISION OF / CRIMINAL INVESTIGATION"). The answer format wrote that break as is, so the entity line
+ended mid-name and the rest became a stray line: 162 of the 1,803 training records (9%), almost all in caption and
+counsel blocks, taught the model truncated names. On test the model wrote exactly those fragments and, on one such
+chunk, stopped its entity list at 10 of 20 names and filled the gap with a cross product of REPRESENTS lines; that
+chunk holds 14 of the 23 REPRESENTS relations it missed against the labeller. relweave 0.4.3 writes names with their
+whitespace collapsed and finds them across the wrap; the court model has not been retrained since. Of the other
+training sets only the government reports had such names (7 of 540 records); the business data of the shared base
+had none.
+
 **What this means for a user.** The recipe runs end to end on a new domain on an 8 GB card. Generation runs on vLLM. Only
 the head at full size needs a larger card. With 29 or 64 training documents the result reaches the level of a careful
 single labelling pass, not that of the best labeller, and doubling the documents moved it by about +0.07. Three lessons carry over. The model did not exceed its labeller, and a
@@ -972,8 +1002,8 @@ smallest-model goal is not yet met, and whether a much smaller encoder can take 
 question (Section 9). The changeable-schema head (Section 5.5) reads unseen relation types at 0.29 F1 against 0.80 for
 trained ones, from about 100 described types of training; its held-out numbers are noisy and cover three types.
 The one new domain taken through the full recipe (court opinions, Section 5.13) fell short of its pass mark (judged
-0.55 against 0.65 from 64 training documents, 0.50 from 29), on 9 test documents; whether training documents
-targeted at the weak structures close the gap is untested.
+0.62 against 0.65 from 64 training documents counting facts, 0.55 counting claims), on 9 test documents, from
+training targets of which 9% were split by a formatting bug since fixed; a retrain on the fixed targets is untested.
 
 ## 9. Conclusion and outlook
 

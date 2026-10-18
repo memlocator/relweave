@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.3
+
+### Fixed
+
+- **A name with a line break split its training target.** Labellers copy names from wrapped captions as they stand
+  ("SOUTH DAKOTA DIVISION OF" / "CRIMINAL INVESTIGATION"); the answer format wrote the break, so the entity line ended
+  mid-name and the rest became a stray line. On the court opinions 9% of training records were affected (government
+  reports 1%, business none), and the model learned the fragments. Entity lines (answers, carry-forward lists, tagger
+  additions, zero-shot prompts) now come from one function, `formats.entity_line`, which collapses whitespace in
+  names, and name matching treats any run of whitespace as one, so a name written on one line is found across the
+  wrap.
+- **Pooled judging counted one fact twice when a system named it differently from the labeller.** `judge add` merged a
+  new system's names only with the claim names already in the pool, not with the labellers' mentions: a case named by
+  its docket number became a second claim beside the labeller's caption-named one, true for the system and a miss
+  against it. `judge pool` now writes `aliases.jsonl` (names each labelled entity goes by, from `--aliases-from`,
+  default `gold,passb`), `judge aliases` writes it for an existing pool, and `score`, `pair` and the per-type table
+  count a fact once whichever name a source used. Pools without the file score as before. On the court pool: 786
+  claims, 715 facts; the court model 0.554 to 0.619, the Opus labeller 0.721 to 0.801.
+- Names compared in judging ignore line breaks ("County Court at\nLaw" is "County Court at Law").
+
 ## 0.4.2
 
 ### Fixed

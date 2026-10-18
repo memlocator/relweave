@@ -125,9 +125,9 @@ when you run the same line again: a step whose output exists is skipped; delete 
 
 Check: pick the generator alone or the union at the best cut by **validation**, never by test.
 
-What to expect: on US court opinions (eight relation types) the union reached judged F1 0.50 from 29 training
-documents and 0.55 from 64, level with a Sonnet labelling pass and below an Opus pass (0.72); doubling the documents
-moved it by about +0.07. Recall was lowest where one block states several relations at once (counsel lines). If a
+What to expect: on US court opinions (eight relation types) the union reached judged F1 0.55 from 29 training
+documents and 0.62 from 64 (facts counted once), level with a Sonnet labelling pass (0.59) and below an Opus pass
+(0.80); doubling the documents moved it by about +0.07. Recall was lowest where one block states several relations at once (counsel lines). If a
 type lags, add training documents with more of the structure it lives in before adding more of everything or changing
 settings (whitepaper Section 5.13).
 
@@ -162,7 +162,10 @@ relweave judge export runs/base_test.jsonl base.jsonl --schema mydomain.py:MYDOM
 relweave judge pool pool gold=gold.jsonl passb=passb.jsonl model=model.jsonl base=base.jsonl --schema mydomain.py:MYDOMAIN
 ```
 
-Give `pool/task_a.md` and `pool/task_b.md` to two different judges (two models, or a model and a person). Then:
+Give `pool/task_a.md` and `pool/task_b.md` to two different judges (two models, or a model and a person). The pool
+also keeps the names each labelled entity goes by (`pool/aliases.jsonl`, from the sources named `gold` and `passb`;
+`--aliases-from` for other names), so a fact is scored once whether a source names a case by its caption or by its
+docket number. Then:
 
 ```bash
 relweave judge check pool        # judges usable? decoys rejected, little disagreement
