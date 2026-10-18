@@ -61,7 +61,7 @@ exit code; a single chunk that fails becomes a warning in the graph and the docu
 
 Speeds on one RTX 3070 Ti (8 GB), 64 test chunks of about 200 words. On 26 unseen long documents (judged,
 facts counted once) the 1.7B scores 0.574 against the 4B's 0.597 (paired -0.023, 95% -0.099 to +0.053), both with
-their entity taggers; whitepaper Section 4.
+their entity taggers; whitepaper Section 5.
 
 Each model repository holds the generator twice: as a LoRA adapter in `generator/` (used by relweave's default
 transformers backend on the 4-bit base) and, at the root, merged into the dequantized 4-bit base as one plain bf16
